@@ -16,7 +16,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-trucks}
     ports:
-      - "127.0.0.1:5432:5432"   # localhost only — never expose Postgres publicly
+      # Host access only (the web container reaches Postgres internally at db:5432
+      # regardless). On a shared host set DB_BIND to a free port, e.g. 127.0.0.1:55432.
+      - "${DB_BIND:-127.0.0.1:5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -37,7 +39,9 @@ services:
       ADMIN_USER: ${ADMIN_USER:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
     ports:
-      - "127.0.0.1:8000:8000"   # localhost only; in prod Caddy fronts it on 443
+      # Default: localhost only. For a direct-IP quick test set WEB_BIND=0.0.0.0:<freeport>;
+      # behind a reverse proxy (Caddy/Traefik/nginx) leave default or use a free localhost port.
+      - "${WEB_BIND:-127.0.0.1:8000}:8000"
     # The app reads only the database — no shared files needed (photos aren't stored).
 
   # Extraction pipeline — run on demand, NOT part of `up` (hence the profile).
