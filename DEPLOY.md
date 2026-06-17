@@ -114,6 +114,26 @@ console (Telecaller Login = `ADMIN_PASSWORD`); the mobile app posts to
 **Logs:** `docker compose logs -f web caddy`. **Cert issues:** check `docker compose logs caddy`
 (needs DNS pointing at the VM and ports 80/443 reachable).
 
+### Changing the domain later (config-only — no rebuild)
+
+The public hostname is just the `DOMAIN` env var; nothing in the app code hardcodes it
+(all links are relative). To move from the free DuckDNS subdomain to a purchased domain:
+
+1. Point the new domain's DNS **A-record** at the same VM IP (e.g. `app.yourco.com → 34.31.185.19`).
+2. Edit `.env`: `DOMAIN=app.yourco.com`.
+3. `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d` — Caddy fetches a
+   fresh Let's Encrypt cert for the new name automatically.
+
+**Zero-downtime cutover:** serve both names during the transition — Caddy accepts a
+space-separated list — then drop the old one later:
+```
+DOMAIN="freightdesk.duckdns.org app.yourco.com"
+```
+
+The only place the hostname lives *outside* FreightDesk is the **mobile app's API base URL**
+(`https://<domain>/api/trucks/report`). Point it at the new domain once you switch; the
+dual-domain setup keeps the old URL working until you do.
+
 **Video extraction on the VM** (separate, on demand — copy footage to the VM first):
 ```bash
 VIDEOS_DIR=/path/to/footage docker compose --profile pipeline \
