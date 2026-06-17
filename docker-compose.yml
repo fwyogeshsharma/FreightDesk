@@ -16,7 +16,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-trucks}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"   # localhost only — never expose Postgres publicly
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -37,7 +37,7 @@ services:
       ADMIN_USER: ${ADMIN_USER:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"   # localhost only; in prod Caddy fronts it on 443
     # The app reads only the database — no shared files needed (photos aren't stored).
 
   # Extraction pipeline — run on demand, NOT part of `up` (hence the profile).

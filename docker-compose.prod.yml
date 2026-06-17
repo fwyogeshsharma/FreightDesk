@@ -1,0 +1,28 @@
+# Production overlay — puts Caddy (automatic HTTPS) in front of the web app.
+#
+# On the VM, after a DNS A-record for $DOMAIN points at the VM's external IP:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Requires in .env:  DOMAIN, a strong POSTGRES_PASSWORD, a strong ADMIN_PASSWORD.
+# Open ONLY tcp:80 and tcp:443 in the cloud firewall. Postgres (5432) and the raw web
+# port (8000) stay bound to localhost — Caddy reaches the app over the compose network.
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env (e.g. freightdesk.duckdns.org)}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data        # persisted TLS certs — survives restarts
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

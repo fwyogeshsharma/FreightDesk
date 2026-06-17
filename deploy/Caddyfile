@@ -1,0 +1,7 @@
+# Automatic HTTPS (Let's Encrypt) for $DOMAIN, reverse-proxied to the web container.
+# Caddy obtains & renews the certificate on its own — requires ports 80 + 443 open and
+# $DOMAIN's DNS pointing at this host.
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:8000
+}

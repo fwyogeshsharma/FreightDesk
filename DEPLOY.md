@@ -69,12 +69,56 @@ automatically. It is profile-gated, so a plain `docker compose up` never starts 
 > On a VM, set `VIDEOS_DIR` to the directory where you've copied/mounted the footage
 > (e.g. an attached disk or NFS share). The DB persists in the `pgdata` volume.
 
-### Deploying to the VM later
+---
 
-1. Install Docker on the VM.
-2. Copy the repo (or push the built `web` image to a registry and pull it).
-3. `docker compose up -d` — now anyone on the network can reach the app at
-   `http://<vm-host>:8000`. Move the `pgdata` volume to persist data.
+## Production on a cloud VM (Docker + automatic HTTPS)
+
+Run FreightDesk publicly on a Linux VM (GCP/AWS/etc.). Caddy fronts the app and
+auto-provisions a free Let's Encrypt TLS certificate. Postgres and the raw app port stay
+private (localhost-only); only 80/443 are exposed.
+
+**Prerequisites:** a Linux VM with a public IP, SSH access, and a **domain or free
+subdomain** pointing at the VM's IP (a `DuckDNS` name like `freightdesk.duckdns.org` works
+and gets a real cert).
+
+```bash
+# 1. SSH in, then install Docker (Debian/Ubuntu/most distros)
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER && newgrp docker          # run docker without sudo
+
+# 2. Point your domain's DNS A-record at the VM's external IP (e.g. DuckDNS / registrar),
+#    and open the firewall for HTTP+HTTPS:
+#    GCP:  gcloud compute firewall-rules create freightdesk-web \
+#            --allow tcp:80,tcp:443 --source-ranges 0.0.0.0/0
+#    (SSH/22 is already allowed. Do NOT open 5432 or 8000.)
+
+# 3. Get the code + configure
+git clone https://github.com/fwyogeshsharma/FreightDesk.git && cd FreightDesk
+cp .env.example .env
+nano .env        # set: DOMAIN=<your domain>, a strong POSTGRES_PASSWORD, a strong
+                 #      ADMIN_PASSWORD, and DATABASE_URL to match POSTGRES_PASSWORD
+
+# 4. Build & start db + web + caddy (HTTPS)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+# 5. Create the database schema (one-off, inside the web image)
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web python scripts/init_db.py
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web python scripts/migrate_report_fields.py
+```
+
+Now **`https://<your-domain>`** serves the broker console; `/review` is the telecaller
+console (Telecaller Login = `ADMIN_PASSWORD`); the mobile app posts to
+`https://<your-domain>/api/trucks/report`.
+
+**Updates:** `git pull && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build`.
+**Logs:** `docker compose logs -f web caddy`. **Cert issues:** check `docker compose logs caddy`
+(needs DNS pointing at the VM and ports 80/443 reachable).
+
+**Video extraction on the VM** (separate, on demand — copy footage to the VM first):
+```bash
+VIDEOS_DIR=/path/to/footage docker compose --profile pipeline \
+  -f docker-compose.yml -f docker-compose.prod.yml run --rm pipeline --sink db
+```
 
 ---
 
