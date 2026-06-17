@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Truck Sightings — Dispatch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        fontFamily: {
+          sans: ['"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+          mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
+        },
+        colors: { ink: '#0a0e14', canvas: '#eef0f4' },
+      }}
+    }
+  </script>
+  <style>
+    body { background: var(--canvas, #eef0f4); }
+    :root { --canvas:#eef0f4; }
+    .tnum { font-variant-numeric: tabular-nums; }
+    /* hi-vis hairline under the masthead */
+    .accent-rule { background: linear-gradient(90deg,#f59e0b 0%,#f59e0b 18%,transparent 18%,transparent 100%); }
+    /* quiet staggered row reveal on load */
+    @keyframes rowin { from { opacity:0; transform: translateY(4px);} to {opacity:1; transform:none;} }
+    tbody tr { animation: rowin .35s ease both; }
+    tbody tr:hover { box-shadow: inset 3px 0 0 #059669; }
+    ::-webkit-scrollbar { height: 10px; width: 10px; }
+    ::-webkit-scrollbar-thumb { background:#c3c8d2; border-radius: 9px; border:2px solid #eef0f4; }
+    /* detail slide-over */
+    #detail-panel { transition: transform .22s ease; }
+    .htmx-request #results { opacity: .55; transition: opacity .15s; }
+    tr[data-clickable] { cursor: pointer; }
+  </style>
+</head>
+<body class="font-sans text-slate-800 antialiased">
+
+  <!-- Shared app shell + broker filter bar -->
+  <header class="sticky top-0 z-20 shadow-sm">
+    {% set nav_active = 'sightings' %}
+    {% set page_title = 'Truck Sightings' %}
+    {% set page_subtitle = 'Broker workspace for finding and contacting truck owners.' %}
+    {% include "_nav.html" %}
+
+    <form id="filters" hx-get="/" hx-target="#results" hx-select="#results"
+          hx-swap="outerHTML" hx-push-url="true"
+          hx-trigger="change, submit, keyup changed delay:400ms">
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ dir }}">
+
+      <!-- light search + quick-filter bar -->
+      <div class="bg-white border-b border-slate-200">
+        <div class="max-w-[1500px] mx-auto px-5 py-2.5 flex flex-wrap items-center gap-2 text-sm">
+          <div class="relative">
+            <svg class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input type="text" name="q" value="{{ q }}" autocomplete="off" placeholder="Search anything…"
+                   class="w-72 max-w-[55vw] pl-9 pr-3 py-1.5 rounded-md border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400">
+          </div>
+          <span class="text-[11px] uppercase tracking-wider text-slate-400 ml-1 mr-0.5">Filters</span>
+
+          {% set chip = "px-2.5 py-1.5 rounded-full border border-slate-300 bg-white text-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 hover:border-slate-400" %}
+          <select name="source" class="{{ chip }}">
+            <option value="" {% if not source %}selected{% endif %}>All sources</option>
+            <option value="video" {% if source=='video' %}selected{% endif %}>Video</option>
+            <option value="image_api" {% if source=='image_api' %}selected{% endif %}>Field report</option>
+            <option value="stream" {% if source=='stream' %}selected{% endif %}>Stream</option>
+          </select>
+          <select name="vtype" class="{{ chip }}">
+            <option value="">All types</option>
+            {% for tp in types %}<option value="{{ tp }}" {% if vtype==tp %}selected{% endif %}>{{ tp|title }}</option>{% endfor %}
+          </select>
+          <select name="loc" class="{{ chip }}">
+            <option value="">All locations</option>
+            {% for ct in cities %}<option value="{{ ct }}" {% if loc==ct %}selected{% endif %}>{{ ct }}</option>{% endfor %}
+          </select>
+          <select name="fresh" title="Recency" class="{{ chip }}">
+            <option value="all" {% if fresh=='all' %}selected{% endif %}>Any time</option>
+            <option value="24h" {% if fresh=='24h' %}selected{% endif %}>Last 24h</option>
+            <option value="7d" {% if fresh=='7d' %}selected{% endif %}>Last 7 days</option>
+            <option value="30d" {% if fresh=='30d' %}selected{% endif %}>Last 30 days</option>
+          </select>
+          <label class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border cursor-pointer select-none transition-colors
+                 {% if verified=='verified' %}border-emerald-300 bg-emerald-50 text-emerald-700{% else %}border-slate-300 bg-white text-slate-600 hover:border-slate-400{% endif %}">
+            <input type="checkbox" name="verified" value="verified" {% if verified=='verified' %}checked{% endif %} class="accent-emerald-600">
+            Verified only
+          </label>
+
+          {% if active_filters %}
+            <a href="/" class="ml-1 text-xs text-slate-500 hover:text-red-600 underline">Clear {{ active_filters }} filter{{ 's' if active_filters > 1 else '' }}</a>
+          {% endif %}
+        </div>
+      </div>
+    </form>
+  </header>
+
+  <main class="max-w-[1500px] mx-auto px-5 py-6">
+    {% macro sortth(key, label, extra='') %}
+      {%- set active = (sort == key) -%}
+      {%- set nd = 'asc' if (active and dir == 'desc') else 'desc' -%}
+      <th class="font-semibold px-4 py-3 {{ extra }}">
+        <a href="/?{{ base_qs }}&sort={{ key }}&dir={{ nd }}&page=1"
+           hx-get="/?{{ base_qs }}&sort={{ key }}&dir={{ nd }}&page=1"
+           hx-target="#results" hx-select="#results" hx-swap="outerHTML" hx-push-url="true"
+           class="inline-flex items-center gap-1 hover:text-slate-800 transition-colors {% if active %}text-slate-800{% endif %}">
+          {{ label }}
+          {% if active %}<span class="text-amber-500">{{ '▼' if dir=='desc' else '▲' }}</span>
+          {% else %}<span class="text-slate-300">↕</span>{% endif %}
+        </a>
+      </th>
+    {% endmacro %}
+
+    <div id="results">
+    <!-- result strip -->
+    <div class="flex items-center justify-between mb-3 text-sm text-slate-500">
+      <div>
+        {% if q %}<span class="text-slate-700 font-medium">Results for “{{ q }}”</span> · {% endif %}
+        Showing <span class="tnum text-slate-700 font-medium">{{ trucks|length }}</span> of
+        <span class="tnum text-slate-700 font-medium">{{ total }}</span> trucks
+        {% if active_filters %}<span class="ml-1 text-slate-400">· {{ active_filters }} filter{{ 's' if active_filters > 1 else '' }} active</span>{% endif %}
+      </div>
+      <div class="hidden sm:block text-xs uppercase tracking-wider text-slate-400">
+        {% set _labels = {'seen':'Newest','company':'Company','vehicle':'Vehicle','type':'Type','source':'Source'} %}
+        Sorted by {{ _labels.get(sort, 'Newest') }} {{ '↓' if dir=='desc' else '↑' }}
+      </div>
+    </div>
+
+    {% if not trucks %}
+      <div class="bg-white rounded-xl border border-slate-200 py-24 text-center">
+        <div class="text-slate-300 mb-3">
+          <svg class="mx-auto" width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
+        </div>
+        {% if active_filters %}
+          <p class="text-slate-600 font-medium">No trucks match these filters.</p>
+          <p class="text-sm text-slate-400 mt-1"><a href="/" class="text-emerald-700 underline">Clear filters</a> or widen the recency window.</p>
+        {% else %}
+          <p class="text-slate-600 font-medium">No trucks yet.</p>
+          <p class="text-sm text-slate-400 mt-1">Process videos (<code class="bg-slate-100 px-1 rounded">run.bat --sink db</code>) or collect field reports to populate this list.</p>
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border-collapse">
+            <thead class="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider">
+              <tr class="text-left">
+                {{ sortth('vehicle', 'Vehicle') }}
+                {{ sortth('company', 'Company') }}
+                <th class="font-semibold px-4 py-3 text-emerald-700">📞 Call</th>
+                {{ sortth('type', 'Type', 'hidden lg:table-cell') }}
+                {% if show_location %}<th class="font-semibold px-4 py-3 hidden lg:table-cell">Location</th>{% endif %}
+                {% if show_load %}<th class="font-semibold px-4 py-3 hidden xl:table-cell">Load</th>{% endif %}
+                <th class="font-semibold px-4 py-3">Trust</th>
+                {{ sortth('seen', 'Seen', 'text-right') }}
+                {{ sortth('source', 'Source', 'text-right') }}
+                <th class="px-2 py-3"></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {% for t in trucks %}
+              <tr class="even:bg-slate-50/40 hover:bg-emerald-50/40 transition-colors align-middle"
+                  style="animation-delay: {{ '%.3f'|format(loop.index0 * 0.022) }}s">
+                <!-- Vehicle / plate (with recency dot) -->
+                <td class="px-4 py-3 whitespace-nowrap">
+                  <span class="inline-block w-2 h-2 rounded-full align-middle mr-2
+                    {% if t.fresh=='new' %}bg-emerald-500{% elif t.fresh=='recent' %}bg-amber-400{% else %}bg-slate-300{% endif %}"
+                    title="{% if t.fresh=='new' %}Seen in the last 24 hours{% elif t.fresh=='recent' %}Seen in the last 7 days{% else %}Older sighting{% endif %}"></span>
+                  {% if t.license_plate %}
+                    <span class="font-mono font-semibold tracking-wide text-slate-900">{{ t.license_plate }}</span>
+                  {% else %}<span class="text-slate-300">—</span>{% endif %}
+                </td>
+                <!-- Company -->
+                <td class="px-4 py-3 max-w-[18rem]">
+                  {% if t.company_name %}<span class="text-slate-800 font-medium">{{ t.company_name }}</span>
+                  {% else %}<span class="text-slate-300">—</span>{% endif %}
+                  {% if t.other_text %}<div class="text-xs text-slate-400 truncate" title="{{ t.other_text }}">{{ t.other_text }}</div>{% endif %}
+                </td>
+                <!-- Call (hero) -->
+                <td class="px-4 py-3 whitespace-nowrap">
+                  {% set phones = t.phone_number | phones %}
+                  {% if phones %}
+                    <div class="flex items-center gap-2">
+                      <a href="tel:{{ phones[0].e164 }}"
+                         class="group/call inline-flex items-center gap-2 font-mono text-[15px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200 rounded-lg px-3 py-1.5 min-h-[38px] transition-colors">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
+                        {{ phones[0].pretty }}
+                      </a>
+                      <button type="button" data-phone="{{ phones[0].raw }}" onclick="copyPhone(this)"
+                              class="text-slate-300 hover:text-slate-700 transition-colors" title="Copy number">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      </button>
+                      {% if phones|length > 1 %}
+                        <button type="button" data-phones='{{ phones[1:] | tojson }}' onclick="togglePhones(event, this)"
+                                class="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-1.5 py-1 hover:bg-emerald-100"
+                                title="Show all numbers">+{{ phones|length - 1 }}</button>
+                      {% endif %}
+                    </div>
+                  {% else %}<span class="text-slate-300">—</span>{% endif %}
+                </td>
+                <!-- Type -->
+                <td class="px-4 py-3 whitespace-nowrap hidden lg:table-cell">
+                  {% if t.vehicle_type %}<span class="text-slate-600">{{ t.vehicle_type }}</span>
+                  {% else %}<span class="text-slate-300">—</span>{% endif %}
+                </td>
+                <!-- Location -->
+                {% if show_location %}
+                <td class="px-4 py-3 whitespace-nowrap hidden lg:table-cell text-slate-600">
+                  {% set loc = t.location or t.city %}
+                  {% if loc %}{{ loc }}{% else %}<span class="text-slate-300">—</span>{% endif %}
+                </td>
+                {% endif %}
+                <!-- Load -->
+                {% if show_load %}
+                <td class="px-4 py-3 whitespace-nowrap hidden xl:table-cell">
+                  {% if t.loaded_status=='LOADED' %}
+                    <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">Loaded</span>
+                  {% elif t.loaded_status=='UNLOADED' %}
+                    <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">Empty</span>
+                  {% else %}<span class="text-slate-300">—</span>{% endif %}
+                </td>
+                {% endif %}
+                <!-- Trust: video/stream = Auto Verified (trusted, no review); image_api = Pending→Verified/Rejected -->
+                <td class="px-4 py-3 whitespace-nowrap">
+                  {% if t.source != 'image_api' %}
+                    <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          title="Trusted system-generated record (phone validated by OCR); not part of telecaller review">
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Auto Verified</span>
+                  {% elif t.review_status=='PASSED' %}
+                    <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
+                          title="Confirmed by a telecaller">
+                      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Verified</span>
+                  {% elif t.review_status=='REJECTED' %}
+                    <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200"
+                          title="Rejected by a telecaller">
+                      <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Rejected</span>
+                  {% else %}
+                    <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200"
+                          title="User-submitted report awaiting telecaller review">
+                      <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Pending Review</span>
+                  {% endif %}
+                </td>
+                <!-- Seen -->
+                <td class="px-4 py-3 whitespace-nowrap text-right text-slate-500 tnum" title="{{ t.detected_at_human }}">{{ t.time_ago }}</td>
+                <!-- Source -->
+                <td class="px-4 py-3 whitespace-nowrap text-right">
+                  {% if t.source=='image_api' %}
+                    <span class="text-[11px] font-medium uppercase tracking-wide px-2 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100">Report</span>
+                  {% elif t.source=='stream' %}
+                    <span class="text-[11px] font-medium uppercase tracking-wide px-2 py-0.5 rounded bg-sky-50 text-sky-600 border border-sky-100">Stream</span>
+                  {% else %}
+                    <span class="text-[11px] font-medium uppercase tracking-wide px-2 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">Video</span>
+                  {% endif %}
+                </td>
+                <!-- Details affordance -->
+                <td class="px-2 py-3 text-right">
+                  <button type="button" title="Details"
+                          hx-get="/trucks/{{ t.id }}/panel" hx-target="#detail-body" hx-swap="innerHTML"
+                          onclick="openDetail()"
+                          class="text-slate-300 hover:text-slate-700 text-lg leading-none transition-colors">›</button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {% if pages > 1 %}
+      {% set hxp = 'hx-target="#results" hx-select="#results" hx-swap="outerHTML" hx-push-url="true"' %}
+      <div class="flex items-center justify-center gap-4 mt-6 text-sm">
+        {% if page > 1 %}
+          <a class="px-3 py-1.5 bg-white border border-slate-200 rounded-md shadow-sm hover:border-slate-400 transition-colors"
+             href="/?{{ base_qs }}&sort={{ sort }}&dir={{ dir }}&page={{ page-1 }}"
+             hx-get="/?{{ base_qs }}&sort={{ sort }}&dir={{ dir }}&page={{ page-1 }}" {{ hxp|safe }}>← Prev</a>
+        {% else %}<span class="px-3 py-1.5 text-slate-300">← Prev</span>{% endif %}
+        <span class="text-slate-500 tnum">Page {{ page }} of {{ pages }}</span>
+        {% if page < pages %}
+          <a class="px-3 py-1.5 bg-white border border-slate-200 rounded-md shadow-sm hover:border-slate-400 transition-colors"
+             href="/?{{ base_qs }}&sort={{ sort }}&dir={{ dir }}&page={{ page+1 }}"
+             hx-get="/?{{ base_qs }}&sort={{ sort }}&dir={{ dir }}&page={{ page+1 }}" {{ hxp|safe }}>Next →</a>
+        {% else %}<span class="px-3 py-1.5 text-slate-300">Next →</span>{% endif %}
+      </div>
+      {% endif %}
+    {% endif %}
+    </div><!-- /#results -->
+  </main>
+
+  <!-- Extra phone numbers popover (single, body-level so it escapes the table stacking) -->
+  <div id="phone-pop" onclick="event.stopPropagation()"
+       class="hidden fixed z-50 bg-white border border-slate-200 rounded-lg shadow-xl p-2 min-w-[12rem] space-y-1"></div>
+
+  <!-- Detail slide-over -->
+  <div id="detail-overlay" class="hidden fixed inset-0 z-40 bg-black/40" onclick="closeDetail()"></div>
+  <aside id="detail-panel" class="fixed top-0 right-0 z-50 h-full w-full max-w-md bg-white shadow-2xl translate-x-full flex flex-col">
+    <div class="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50">
+      <span class="text-[11px] uppercase tracking-[0.18em] text-slate-400">Truck detail</span>
+      <button onclick="closeDetail()" class="text-slate-400 hover:text-slate-800 text-xl leading-none">✕</button>
+    </div>
+    <div id="detail-body" class="px-5 py-4 overflow-y-auto grow text-sm text-slate-500">Loading…</div>
+  </aside>
+
+  <script>
+    function _copied(btn) {
+      const old = btn.innerHTML;
+      btn.innerHTML = '<span class="text-emerald-600 text-xs font-semibold">Copied</span>';
+      setTimeout(() => { btn.innerHTML = old; }, 1200);
+    }
+    function copyPhone(btn) {
+      const n = (btn.getAttribute('data-phone') || '').trim();
+      if (!n) return;
+      // Synchronous execCommand FIRST — runs inside the click gesture so it works
+      // over plain http (LAN IP) and https alike. (Async clipboard.writeText in a
+      // .catch loses the user-gesture, which is why copy was failing.)
+      let ok = false;
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = n;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, n.length);
+        ok = !!(document.execCommand && document.execCommand('copy'));
+        document.body.removeChild(ta);
+      } catch (e) { ok = false; }
+      if (!ok && navigator.clipboard && navigator.clipboard.writeText) {
+        try { navigator.clipboard.writeText(n); ok = true; } catch (e) { ok = false; }
+      }
+      if (ok) _copied(btn); else window.prompt('Copy this number:', n);
+    }
+    const COPY_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    function closePhonePops() {
+      const pop = document.getElementById('phone-pop');
+      pop.classList.add('hidden'); pop._owner = null;
+    }
+    function togglePhones(e, btn) {
+      e.stopPropagation();
+      const pop = document.getElementById('phone-pop');
+      if (!pop.classList.contains('hidden') && pop._owner === btn) { closePhonePops(); return; }
+      let phones = [];
+      try { phones = JSON.parse(btn.getAttribute('data-phones') || '[]'); } catch (_) {}
+      pop.innerHTML = phones.map(p =>
+        '<div class="flex items-center gap-2">' +
+          '<a href="tel:' + p.e164 + '" class="flex-1 font-mono text-[13px] text-emerald-700 hover:underline">' + p.pretty + '</a>' +
+          '<button type="button" data-phone="' + p.raw + '" onclick="copyPhone(this)" class="text-slate-400 hover:text-slate-700 p-1" title="Copy">' + COPY_SVG + '</button>' +
+        '</div>'
+      ).join('');
+      pop._owner = btn;
+      const r = btn.getBoundingClientRect();
+      pop.classList.remove('hidden');                 // unhide first so we can measure width
+      const w = pop.offsetWidth;
+      let left = r.left;
+      if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8;  // keep on-screen
+      pop.style.top = (r.bottom + 4) + 'px';
+      pop.style.left = Math.max(8, left) + 'px';
+    }
+    document.addEventListener('click', closePhonePops);
+    window.addEventListener('scroll', closePhonePops, true);  // fixed popover won't follow scroll
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePhonePops(); });
+    function openDetail() {
+      document.getElementById('detail-body').innerHTML = '<div class="text-slate-400 py-8 text-center">Loading…</div>';
+      document.getElementById('detail-overlay').classList.remove('hidden');
+      document.getElementById('detail-panel').classList.remove('translate-x-full');
+    }
+    function closeDetail() {
+      document.getElementById('detail-overlay').classList.add('hidden');
+      document.getElementById('detail-panel').classList.add('translate-x-full');
+    }
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDetail(); });
+  </script>
+</body>
+</html>

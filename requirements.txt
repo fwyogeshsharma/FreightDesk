@@ -1,0 +1,21 @@
+numpy
+pillow
+opencv-python-headless
+ultralytics
+easyocr
+python-Levenshtein
+tqdm
+rich
+
+# --- Database + web app + APIs (added 2026-06) ---
+sqlalchemy>=2
+psycopg[binary]
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic-settings
+
+# PaddleOCR (higher accuracy) — not yet available for Python 3.14
+# Install when PaddleOCR adds Python 3.14 support:
+#   pip install paddlepaddle paddleocr
+# Then set ocr_backend = "paddleocr" in pipeline/config.py

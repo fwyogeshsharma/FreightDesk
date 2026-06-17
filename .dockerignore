@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+videos/
+output/
+pgsql/
+pgsql.zip
+pgdata/
+*.log
+*.mp4
+.git/
+session_log.md*
+diag_*.py
+test_*.py
+run_stdout.txt

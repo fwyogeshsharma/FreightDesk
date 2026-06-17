@@ -1,0 +1,39 @@
+# ── Python ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# ── Virtualenv / local Postgres / runtime data (never commit) ──
+pgsql/
+pgsql.zip
+pgdata/
+videos/
+output/
+test_images/
+
+# ── Logs ─────────────────────────────────────────────────
+*.log
+
+# ── Secrets / local env ──────────────────────────────────
+.env
+
+# ── Auto-downloaded weights (ultralytics fetches yolov8n.pt on first run) ──
+/yolov8n.pt
+models/yolov8n.pt
+models/.cache/
+
+# ── Editor / OS ──────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ── Dev scratch / shared screenshots / one-off diagnostics ──
+*.png
+claude_chat.txt
+session_log.md.bak
+diag_*.py
+test_full_frame.py
+test_single_frame.py
+test_speed.py

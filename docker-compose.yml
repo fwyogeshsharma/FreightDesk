@@ -1,0 +1,43 @@
+# Local dev now, VM deployment later: same file.
+#   docker compose up -d db     # just Postgres (run the app/pipeline on the host)
+#   docker compose up -d        # Postgres + the broker web app
+#
+# The video/stream pipeline normally runs on the HOST (it needs the local video
+# files and CPU), pointing DATABASE_URL at localhost:5432. The web app can run
+# either on the host (run_webapp.bat) or in the "web" container below.
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-trucks}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-trucks}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Inside the compose network the database host is the service name "db".
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-trucks}
+      ADMIN_USER: ${ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+    ports:
+      - "8000:8000"
+    # The app reads only the database — no shared files needed (photos aren't stored).
+
+volumes:
+  pgdata:

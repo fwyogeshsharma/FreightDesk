@@ -1,0 +1,95 @@
+{% set phones = t.phone_number | phones %}
+<div class="flex items-center gap-2 mb-1">
+  <span class="inline-block w-2.5 h-2.5 rounded-full
+    {% if t.fresh=='new' %}bg-emerald-500{% elif t.fresh=='recent' %}bg-amber-400{% else %}bg-slate-300{% endif %}"></span>
+  <span class="font-mono font-bold text-xl text-slate-900">{{ t.license_plate or '—' }}</span>
+  {% if t.source != 'image_api' %}
+    <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Auto Verified</span>
+  {% elif t.review_status=='PASSED' %}
+    <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+      <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>Verified</span>
+  {% elif t.review_status=='REJECTED' %}
+    <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">
+      <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Rejected</span>
+  {% else %}
+    <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+      <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Pending Review</span>
+  {% endif %}
+</div>
+<div class="text-slate-500 mb-4">{{ t.company_name or 'Unknown company' }}</div>
+
+<!-- Call -->
+<div class="mb-5">
+  <div class="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Contact</div>
+  {% if phones %}
+    <div class="flex flex-col gap-2">
+      {% for ph in phones %}
+        <div class="flex items-center gap-2">
+          <a href="tel:{{ ph.e164 }}" class="flex-1 inline-flex items-center gap-2 font-mono text-[15px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg px-3 py-2 transition-colors">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
+            {{ ph.pretty }}
+          </a>
+          <button type="button" data-phone="{{ ph.raw }}" onclick="copyPhone(this)" class="text-slate-400 hover:text-slate-700" title="Copy">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
+      {% endfor %}
+    </div>
+    {% if t.phone_reported and t.phone_ocr %}
+      <div class="text-[11px] text-slate-400 mt-2">Reported: {{ t.phone_reported }} · OCR: {{ t.phone_ocr }}</div>
+    {% endif %}
+  {% else %}<span class="text-slate-400">No phone number.</span>{% endif %}
+  {% if t.website %}<div class="text-sm text-blue-600 mt-2 break-all">🌐 {{ t.website }}</div>{% endif %}
+</div>
+
+{% macro field(label, value) %}
+  {% if value or value == 0 %}<div class="flex justify-between gap-4 py-1.5 border-b border-slate-100">
+    <span class="text-slate-400">{{ label }}</span>
+    <span class="text-slate-800 text-right font-medium">{{ value }}</span></div>{% endif %}
+{% endmacro %}
+
+<!-- Overview -->
+<div class="mb-5">
+  <div class="text-[11px] uppercase tracking-wider text-slate-400 mb-1">Overview</div>
+  {{ field('Vehicle type', t.vehicle_type) }}
+  {{ field('Location', t.location or t.city) }}
+  {% if t.loaded_status %}{{ field('Load', 'Loaded' if t.loaded_status=='LOADED' else 'Empty') }}{% endif %}
+  {{ field('Wheels', t.num_wheels) }}
+  {{ field('Source', 'Field report' if t.source=='image_api' else t.source|title) }}
+  {{ field('Seen', t.detected_at_human ~ '  (' ~ t.time_ago ~ ')') }}
+  {% if t.latitude and t.longitude %}
+    <div class="py-1.5"><a target="_blank" class="text-blue-600 hover:underline text-sm"
+       href="https://www.google.com/maps?q={{ t.latitude }},{{ t.longitude }}">📍 Open location on map</a></div>
+  {% endif %}
+</div>
+
+<!-- Verification / review (field reports) -->
+{% if t.source=='image_api' %}
+<div class="mb-5">
+  <div class="text-[11px] uppercase tracking-wider text-slate-400 mb-1">Verification</div>
+  {{ field('Machine check', t.verification_status) }}
+  {{ field('Reason', t.reason if t.reason is defined else None) }}
+  {{ field('Review', t.review_status) }}
+  {{ field('Reviewed by', t.reviewed_by) }}
+  {{ field('Reviewed at', t.reviewed_at_human) }}
+  {{ field('Note', t.review_note) }}
+  {{ field('Reported by', t.reported_by) }}
+</div>
+{% endif %}
+
+<!-- Raw extraction (internal) -->
+<details class="mb-4">
+  <summary class="text-[11px] uppercase tracking-wider text-slate-400 cursor-pointer select-none">Raw extraction</summary>
+  <div class="mt-2">
+    {{ field('Extraction quality', t.plate_confidence) }}
+    {{ field('Frames', t.frames) }}
+    {{ field('Record id', t.id) }}
+    {{ field('Created', t.created_at) }}
+    {% if t.other_text %}<div class="py-1.5"><div class="text-slate-400 mb-1">Other text</div><div class="text-slate-700 text-xs break-words">{{ t.other_text }}</div></div>{% endif %}
+    {% if t.body_texts %}<div class="py-1.5"><div class="text-slate-400 mb-1">All OCR text</div>
+      <div class="flex flex-wrap gap-1">{% for bt in t.body_texts %}<span class="text-[11px] bg-slate-100 text-slate-600 rounded px-1.5 py-0.5">{{ bt }}</span>{% endfor %}</div></div>{% endif %}
+    {% if t.plate_candidates %}<div class="py-1.5"><div class="text-slate-400 mb-1">Plate reads</div>
+      <div class="font-mono text-xs text-slate-600">{{ t.plate_candidates }}</div></div>{% endif %}
+  </div>
+</details>

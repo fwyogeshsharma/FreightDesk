@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review queue — Dispatch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: {
+      fontFamily: { sans: ['"IBM Plex Sans"','ui-sans-serif','system-ui','sans-serif'],
+                    mono: ['"IBM Plex Mono"','ui-monospace','monospace'] },
+      colors: { ink: '#0a0e14' },
+    }}}
+  </script>
+  <style>
+    body { background:#eef0f4; }
+    .tnum { font-variant-numeric: tabular-nums; }
+    .accent-rule { background: linear-gradient(90deg,#f59e0b 0,#f59e0b 18%,transparent 18%); }
+    @keyframes rowin { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+    tbody tr { animation: rowin .35s ease both; }
+    ::-webkit-scrollbar { height:10px;width:10px } ::-webkit-scrollbar-thumb{background:#c3c8d2;border-radius:9px;border:2px solid #eef0f4}
+  </style>
+</head>
+<body class="font-sans text-slate-800 antialiased">
+
+  <header class="sticky top-0 z-20 shadow-sm">
+    {% set nav_active = 'review' %}
+    {% set page_title = 'Review Queue' %}
+    {% set page_subtitle = 'Telecaller workspace for validating submitted reports.' %}
+    {% include "_nav.html" %}
+
+    <!-- review filters row -->
+    <div class="bg-white border-b border-slate-200">
+      <div class="max-w-[1500px] mx-auto px-5 py-2.5 flex flex-wrap items-center gap-2 text-sm">
+        <span class="tnum text-slate-600 font-medium mr-1">{{ total }} in view</span>
+        {% set rchip = "px-2.5 py-1.5 rounded-full border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-400 hover:border-slate-400" %}
+        <form method="get" action="/review" class="flex flex-wrap items-center gap-2">
+          <select name="review" class="{{ rchip }}">
+            {% for v in ['pending','passed','rejected','all'] %}
+              <option value="{{ v }}" {% if review==v %}selected{% endif %}>{{ v|capitalize }}</option>{% endfor %}
+          </select>
+          <select name="verification" class="{{ rchip }}">
+            {% for v in ['all','verified','unverified'] %}
+              <option value="{{ v }}" {% if verification==v %}selected{% endif %}>{{ v|capitalize }}</option>{% endfor %}
+          </select>
+          <button class="bg-amber-500 hover:bg-amber-400 text-ink font-semibold px-3 py-1.5 rounded-full transition-colors">Filter</button>
+        </form>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-[1500px] mx-auto px-5 py-6">
+    {% if not reports %}
+      <div class="bg-white rounded-xl border border-slate-200 py-24 text-center text-slate-500">
+        No reports in this view.
+      </div>
+    {% else %}
+      <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider text-left">
+              <tr>
+                <th class="font-semibold px-4 py-3">Vehicle</th>
+                <th class="font-semibold px-4 py-3">Contact</th>
+                <th class="font-semibold px-4 py-3 hidden lg:table-cell">Company</th>
+                <th class="font-semibold px-4 py-3 hidden xl:table-cell">Load / Location</th>
+                <th class="font-semibold px-4 py-3 hidden lg:table-cell">Reporter</th>
+                <th class="font-semibold px-4 py-3">Review</th>
+                <th class="font-semibold px-4 py-3 text-right">Decision</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              {% for t in reports %}
+              <tr id="row-{{ t.id }}" class="even:bg-slate-50/40 align-top"
+                  style="animation-delay: {{ '%.3f'|format(loop.index0 * 0.022) }}s">
+                <!-- Vehicle + verification -->
+                <td class="px-4 py-3 whitespace-nowrap">
+                  <div class="font-mono font-semibold tracking-wide text-slate-900">{{ t.license_plate or '—' }}</div>
+                  <div class="mt-1">
+                    {% if t.verification_status=='VERIFIED' %}
+                      <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">✓ Verified</span>
+                    {% else %}
+                      <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">⚠ Unverified</span>
+                    {% endif %}
+                  </div>
+                  <div class="text-[11px] text-slate-400 mt-1 max-w-[14rem]" title="{{ t.reason }}">{{ t.reason or '' }}</div>
+                  <div class="text-[11px] text-slate-400 mt-0.5 tnum">#{{ t.id }} · {{ t.time_ago }}</div>
+                </td>
+                <!-- Contact -->
+                <td class="px-4 py-3 whitespace-nowrap">
+                  {% if t.phone_number %}
+                    <div class="flex flex-col gap-1">
+                      {% for ph in t.phone_number.split('; ') %}
+                        <a href="tel:{{ ph }}" class="inline-flex items-center gap-1 font-mono text-[13px] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-1 rounded-md transition-colors">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
+                          {{ ph }}</a>
+                      {% endfor %}
+                    </div>
+                  {% else %}<span class="text-slate-300">—</span>{% endif %}
+                  {% if t.phone_reported and t.phone_ocr and t.phone_reported not in (t.phone_ocr or '') %}
+                    <div class="text-[10px] text-slate-400 mt-1">typed {{ t.phone_reported }} · ocr {{ t.phone_ocr }}</div>
+                  {% endif %}
+                </td>
+                <!-- Company -->
+                <td class="px-4 py-3 hidden lg:table-cell text-slate-700">{{ t.company_name or '—' }}</td>
+                <!-- Load / Location -->
+                <td class="px-4 py-3 hidden xl:table-cell text-slate-600 whitespace-nowrap">
+                  {% if t.loaded_status %}<div>{{ '📦 ' + t.loaded_status if t.loaded_status=='LOADED' else '⬜ ' + t.loaded_status }}{% if t.num_wheels %} · 🛞 {{ t.num_wheels }}{% endif %}</div>{% endif %}
+                  {% if t.location %}<div>🗺️ {{ t.location }}</div>{% endif %}
+                  {% if t.latitude and t.longitude %}<a class="text-blue-600 hover:underline text-xs" target="_blank" href="https://www.google.com/maps?q={{ t.latitude }},{{ t.longitude }}">open map</a>{% endif %}
+                  {% if not t.loaded_status and not t.location %}<span class="text-slate-300">—</span>{% endif %}
+                </td>
+                <!-- Reporter -->
+                <td class="px-4 py-3 hidden lg:table-cell text-slate-600 whitespace-nowrap">{{ t.reported_by or '—' }}</td>
+                <!-- Review status -->
+                <td class="px-4 py-3 whitespace-nowrap">
+                  {% if t.review_status=='PASSED' %}<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-600 text-white">Passed</span>
+                  {% elif t.review_status=='REJECTED' %}<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-600 text-white">Rejected</span>
+                  {% else %}<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">Pending</span>{% endif %}
+                </td>
+                <!-- Decision -->
+                <td class="px-4 py-3 whitespace-nowrap text-right">
+                  <div class="inline-flex gap-2">
+                    <button onclick="decide({{ t.id }},'PASSED')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors">✓ Pass</button>
+                    <button onclick="openReject({{ t.id }}, '{{ t.license_plate or ('#' ~ t.id) }}')" class="bg-white hover:bg-red-50 text-red-600 border border-red-200 text-sm font-semibold px-3 py-1.5 rounded-lg transition-colors">✗ Reject</button>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {% if pages > 1 %}
+      <div class="flex items-center justify-center gap-4 mt-6 text-sm">
+        {% if page > 1 %}<a class="px-3 py-1.5 bg-white border border-slate-200 rounded-md shadow-sm hover:border-slate-400"
+           href="/review?review={{ review }}&verification={{ verification }}&page={{ page-1 }}">← Prev</a>{% endif %}
+        <span class="text-slate-500 tnum">Page {{ page }} of {{ pages }}</span>
+        {% if page < pages %}<a class="px-3 py-1.5 bg-white border border-slate-200 rounded-md shadow-sm hover:border-slate-400"
+           href="/review?review={{ review }}&verification={{ verification }}&page={{ page+1 }}">Next →</a>{% endif %}
+      </div>
+      {% endif %}
+    {% endif %}
+  </main>
+
+  <!-- Reject confirmation modal -->
+  <div id="reject-modal" class="hidden fixed inset-0 z-50 items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+       onclick="if(event.target===this)closeReject()">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-4">
+      <div class="flex items-start gap-3">
+        <span class="grid place-items-center w-10 h-10 rounded-full bg-red-100 text-red-600 shrink-0 text-xl font-bold">!</span>
+        <div>
+          <h2 class="font-bold text-lg leading-tight">Reject report <span id="reject-label" class="font-mono text-slate-500"></span>?</h2>
+          <p class="text-sm text-slate-500 mt-0.5">It will be marked <b>REJECTED</b> and the contributor won't be rewarded for it.</p>
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Reason for rejecting
+          <span class="text-slate-400 font-normal">(optional)</span></label>
+        <textarea id="reject-reason" rows="3" placeholder="e.g. number not reachable / wrong truck / fake details"
+          class="w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-red-300"></textarea>
+      </div>
+      <div class="flex justify-end gap-2">
+        <button onclick="closeReject()"
+          class="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 font-medium transition-colors">Cancel</button>
+        <button id="reject-confirm" onclick="confirmReject()"
+          class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold transition-colors">Reject report</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let _rejectId = null;
+
+    async function decide(id, status, note = "") {
+      const res = await fetch("/api/trucks/" + id, {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({review_status: status, review_note: note}),
+      });
+      if (res.ok) { location.reload(); } else { alert("Update failed (" + res.status + ")"); }
+    }
+
+    function openReject(id, label) {
+      _rejectId = id;
+      document.getElementById("reject-reason").value = "";
+      document.getElementById("reject-label").textContent = label || ("#" + id);
+      const m = document.getElementById("reject-modal");
+      m.classList.remove("hidden"); m.classList.add("flex");
+      setTimeout(() => document.getElementById("reject-reason").focus(), 50);
+    }
+
+    function closeReject() {
+      const m = document.getElementById("reject-modal");
+      m.classList.add("hidden"); m.classList.remove("flex");
+      _rejectId = null;
+    }
+
+    function confirmReject() {
+      const note = document.getElementById("reject-reason").value.trim();
+      const id = _rejectId;
+      document.getElementById("reject-confirm").disabled = true;
+      closeReject();
+      if (id != null) decide(id, "REJECTED", note);
+    }
+
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeReject(); });
+  </script>
+</body>
+</html>
