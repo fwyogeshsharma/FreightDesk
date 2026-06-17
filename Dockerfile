@@ -11,8 +11,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# This host has no GPU. Install CPU-only torch/torchvision FIRST, from PyTorch's CPU
+# wheel index, so the transitive deps below (easyocr, ultralytics) reuse them instead
+# of pulling the multi-GB CUDA build. Saves ~2-3 GB of image size and a large chunk of
+# RAM at model-load time (no CUDA libraries mapped in).
+RUN pip install --no-cache-dir torch torchvision \
+        --index-url https://download.pytorch.org/whl/cpu
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-download the easyocr English models at build time so they are baked into the
+# image: no first-request download, and they survive container restarts (the cache
+# at /root/.EasyOCR is otherwise ephemeral and re-downloaded after every restart).
+RUN python -c "import easyocr; easyocr.Reader(['en'], gpu=False, verbose=False)"
 
 COPY pipeline ./pipeline
 COPY webapp ./webapp

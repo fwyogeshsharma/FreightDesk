@@ -1,3 +1,6 @@
+# NOTE: torch + torchvision are installed separately in the Dockerfile from the
+# CPU-only wheel index (this deploys on CPU-only hosts). easyocr/ultralytics below
+# then reuse that CPU build instead of pulling the multi-GB CUDA one.
 numpy
 pillow
 opencv-python-headless
