@@ -1,10 +1,11 @@
 # Local dev now, VM deployment later: same file.
-#   docker compose up -d db     # just Postgres (run the app/pipeline on the host)
-#   docker compose up -d        # Postgres + the broker web app
+#   docker compose up -d db                                  # just Postgres
+#   docker compose up -d                                     # Postgres + broker web app
+#   VIDEOS_DIR=/data/footage docker compose --profile pipeline run --rm pipeline
+#                                                            # process videos into the DB
 #
-# The video/stream pipeline normally runs on the HOST (it needs the local video
-# files and CPU), pointing DATABASE_URL at localhost:5432. The web app can run
-# either on the host (run_webapp.bat) or in the "web" container below.
+# Videos are operational INPUT DATA (large), so they are never baked into the image —
+# they are mounted at runtime from the host via VIDEOS_DIR (default ./videos).
 
 services:
   db:
@@ -38,6 +39,24 @@ services:
     ports:
       - "8000:8000"
     # The app reads only the database — no shared files needed (photos aren't stored).
+
+  # Extraction pipeline — run on demand, NOT part of `up` (hence the profile).
+  # Mounts the host's video folder read-only so the container can find the footage.
+  #   VIDEOS_DIR=/path/to/footage docker compose --profile pipeline run --rm pipeline
+  # Add args after the service name, e.g. `... run --rm pipeline --workers 2 --sink both`.
+  pipeline:
+    build: .
+    profiles: ["pipeline"]
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-trucks}
+    volumes:
+      - ${VIDEOS_DIR:-./videos}:/app/videos:ro   # host footage → container (read-only)
+      - ./output:/app/output                     # CSV backup when --sink both/csv
+    entrypoint: ["python", "main.py"]
+    command: ["--input", "/app/videos", "--sink", "db"]
 
 volumes:
   pgdata:

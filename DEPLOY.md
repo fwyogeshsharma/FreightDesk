@@ -44,9 +44,30 @@ Run **everything** in containers (DB + web app):
 docker compose up -d            # db + web; app at http://localhost:8000
 ```
 
-The `web` container talks to the DB at host `db` (set automatically). The pipeline
-still runs on the host because it needs the local video files and CPU; it writes to
-the same Postgres on `localhost:5432`.
+The `web` container talks to the DB at host `db` (set automatically).
+
+### Processing videos (where the footage comes from)
+
+**Videos are operational input data, not code — they are never committed to git or baked
+into the Docker image.** You supply them at runtime. Two options:
+
+**On the host** (simplest; the pipeline is CPU-heavy and the footage is usually local):
+```powershell
+run.bat --input "D:\path\to\footage" --sink db     # DATABASE_URL → localhost:5432
+```
+
+**In a container** (mounts the host footage folder read-only via `VIDEOS_DIR`):
+```powershell
+# point VIDEOS_DIR at wherever the videos live; default is ./videos
+$env:VIDEOS_DIR = "D:\path\to\footage"
+docker compose --profile pipeline run --rm pipeline                  # --sink db by default
+docker compose --profile pipeline run --rm pipeline --workers 2 --sink both   # extra args
+```
+The `pipeline` service shares the compose network, so it reaches Postgres at `db:5432`
+automatically. It is profile-gated, so a plain `docker compose up` never starts it.
+
+> On a VM, set `VIDEOS_DIR` to the directory where you've copied/mounted the footage
+> (e.g. an attached disk or NFS share). The DB persists in the `pgdata` volume.
 
 ### Deploying to the VM later
 
