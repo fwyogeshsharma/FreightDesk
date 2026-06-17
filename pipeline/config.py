@@ -1,12 +1,17 @@
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional, Tuple, List
+
+# Project root (the folder containing pipeline/). Keeps defaults independent of where
+# the project lives or what the folder is named.
+_ROOT = Path(__file__).resolve().parent.parent
 
 
 @dataclass
 class Config:
-    # Paths
-    input_dir: str = r"D:\projects\Extractor\videos"
-    output_dir: str = r"D:\projects\Extractor\output"
+    # Paths (relative to the project root by default; override via CLI/env)
+    input_dir: str = str(_ROOT / "videos")
+    output_dir: str = str(_ROOT / "output")
     debug: bool = False
 
     # Frame sampling
