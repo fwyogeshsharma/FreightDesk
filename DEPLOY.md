@@ -110,7 +110,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web pyt
 ```
 
 > `migrate_user_accounts.py` adds the `users` + `user_sessions` tables and the reporter/
-> reviewer attribution columns, then seeds an admin from `ADMIN_PHONE`/`ADMIN_PASSWORD`.
+> reviewer attribution columns, then seeds an admin from `ADMIN_USERNAME`/`ADMIN_PASSWORD`.
 > It's idempotent — safe to re-run after a `git pull`.
 
 Now **`https://<your-domain>`** serves the broker console; `/review` is the telecaller
@@ -240,7 +240,8 @@ One unified `users` table serves two audiences, distinguished by `role`:
 
 Auth is **opaque session tokens** (the `user_sessions` table) — the **same tokens** back
 the mobile **bearer** header and the web **session cookie**. Passwords are stored as
-stdlib PBKDF2-SHA256 (no third-party crypto). `phone` is the login id (normalized).
+stdlib PBKDF2-SHA256 (no third-party crypto). **Login id depends on audience:**
+contributors log in by **phone** (mobile); telecallers/admins log in by **username** (web).
 
 **Mobile API (the app's register/login screens):**
 ```bash
@@ -257,20 +258,21 @@ Report submission is **transition mode**: with a valid bearer token the row is a
 to that user (`reported_by_user_id` + `reporter_phone`/name snapshots); without one it
 stays anonymous exactly as before — the app can adopt auth at its own pace.
 
-**Internal operators (telecallers/admins) are created by an admin — no self-service:**
+**Internal operators (telecallers/admins) are created by an admin — no self-service.**
+They log in by **username**; `--phone` is an optional contact field.
 ```bash
 # in a container (or host venv): create / manage operator accounts
-docker compose run --rm web python scripts/create_user.py create --phone 9000000001 --role telecaller --name "Asha"
+docker compose run --rm web python scripts/create_user.py create --username asha --role telecaller --name "Asha"
 docker compose run --rm web python scripts/create_user.py list
-docker compose run --rm web python scripts/create_user.py set-role  --phone 9000000001 --role admin
-docker compose run --rm web python scripts/create_user.py set-password --phone 9000000001
-docker compose run --rm web python scripts/create_user.py deactivate --phone 9000000001
+docker compose run --rm web python scripts/create_user.py set-role  --user asha --role admin
+docker compose run --rm web python scripts/create_user.py set-password --user asha
+docker compose run --rm web python scripts/create_user.py deactivate --user asha
 ```
-The **seed admin** is created automatically on first start from `ADMIN_PHONE`
-(default = `ADMIN_USER`) + `ADMIN_PASSWORD` — log into the web app with that phone +
-password, then add telecallers with the CLI. Set `SECURE_COOKIES=1` once HTTPS fronts the
-app. The legacy `X-Admin-Token: <ADMIN_PASSWORD>` still authenticates the PATCH endpoint
-for automation.
+The **seed admin** is created automatically on first start from `ADMIN_USERNAME`
+(default = `ADMIN_USER`, i.e. `admin`) + `ADMIN_PASSWORD` — log into the web app with that
+**username** + password, then add telecallers with the CLI. Set `SECURE_COOKIES=1` once
+HTTPS fronts the app. The legacy `X-Admin-Token: <ADMIN_PASSWORD>` still authenticates the
+PATCH endpoint for automation.
 
 ### Telecaller review & rewards
 
@@ -278,7 +280,7 @@ Two statuses per report: **`verification_status`** (machine, from photos:
 VERIFIED/UNVERIFIED) and **`review_status`** (human telecaller: PENDING → PASSED /
 REJECTED). Every report starts PENDING.
 
-- Telecallers open **`/review`** (log in with their **phone + password**), work the
+- Telecallers open **`/review`** (log in with their **username + password**), work the
   **pending** queue, call the number to confirm the truck is real, then **Pass**/**Reject**.
 - Programmatic equivalent — `PATCH /api/trucks/{id}` with header `X-Admin-Token: <ADMIN_PASSWORD>`:
   ```

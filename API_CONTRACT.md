@@ -49,7 +49,7 @@ curl -X POST http://localhost:8000/api/trucks/report \
   -F "images=@truck_front.jpg" -F "phone_number=9928001122"
 ```
 
-`user` object shape: `{ id, phone, email, display_name, role, is_active, registration_source, created_at }` (never includes the password).
+`user` object shape: `{ id, phone, username, email, display_name, role, is_active, registration_source, created_at }` (never includes the password). For mobile contributors `username` is always `null` — they're identified by `phone`.
 
 ---
 

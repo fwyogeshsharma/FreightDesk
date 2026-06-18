@@ -190,9 +190,12 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    # Phone is the login identity (normalized — digits, optional leading '+').
-    phone: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
-    email: Mapped[Optional[str]] = mapped_column(String(255))  # optional; future internal users
+    # Login identity. Contributors (mobile) log in by phone; internal operators
+    # (telecaller/admin) log in by username. Both are unique and both nullable, so a
+    # user carries only the identifier that fits their role (operator phone is optional).
+    phone: Mapped[Optional[str]] = mapped_column(String(32), unique=True, index=True)
+    username: Mapped[Optional[str]] = mapped_column(String(64), unique=True, index=True)
+    email: Mapped[Optional[str]] = mapped_column(String(255))  # optional contact
     display_name: Mapped[Optional[str]] = mapped_column(String(128))
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="contributor")
@@ -206,6 +209,7 @@ class User(Base):
         return {
             "id": self.id,
             "phone": self.phone,
+            "username": self.username,
             "email": self.email,
             "display_name": self.display_name,
             "role": self.role,

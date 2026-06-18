@@ -31,14 +31,14 @@
       </div>
     </div>
 
-    <p class="text-sm text-slate-400 -mt-1">For telecallers &amp; admins. Brokers don't need an account — the truck list is open. New operator accounts are created by an admin.</p>
+    <p class="text-sm text-slate-400 -mt-1">Sign in to review submitted reports. Brokers don't need an account — the truck list is open. Operator accounts are created by an admin.</p>
 
     {% if error %}
-      <div class="text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">Incorrect phone or password, or this account isn't a telecaller.</div>
+      <div class="text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">Incorrect username or password, or this account can't review.</div>
     {% endif %}
 
-    <label class="text-xs uppercase tracking-wider text-slate-400 -mb-3">Phone</label>
-    <input type="text" name="phone" autofocus required placeholder="9811008120" autocomplete="username"
+    <label class="text-xs uppercase tracking-wider text-slate-400 -mb-3">Username</label>
+    <input type="text" name="username" autofocus required placeholder="asha" autocomplete="username"
            class="px-3 py-2.5 rounded-md bg-white/10 border border-white/15 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-400">
 
     <label class="text-xs uppercase tracking-wider text-slate-400 -mb-3">Password</label>

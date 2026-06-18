@@ -135,8 +135,13 @@ bearer_scheme = HTTPBearer(
     description="Paste the token returned by /api/auth/login or /api/auth/register.")
 
 # Lightweight, session-detached identities passed around the request.
-CurrentUser = namedtuple("CurrentUser", "id phone display_name role")
+CurrentUser = namedtuple("CurrentUser", "id phone username display_name role")
 Reviewer = namedtuple("Reviewer", "name user_id")
+
+
+def _display_name(user) -> str:
+    """Best human label for a user — display name, else their login id."""
+    return user.display_name or user.username or user.phone
 
 
 def _request_token(request: Request) -> Optional[str]:
@@ -160,7 +165,7 @@ def get_current_user(request: Request) -> Optional[CurrentUser]:
         u = auth.resolve_session(s, token)
         if not u:
             return None
-        return CurrentUser(u.id, u.phone, u.display_name, u.role)
+        return CurrentUser(u.id, u.phone, u.username, u.display_name, u.role)
 
 
 def _can_review(user: Optional[CurrentUser]) -> bool:
@@ -177,7 +182,7 @@ def require_reviewer(request: Request) -> Reviewer:
     legacy X-Admin-Token == ADMIN_PASSWORD for automation. 403 otherwise."""
     user = get_current_user(request)
     if _can_review(user):
-        return Reviewer(user.display_name or user.phone, user.id)
+        return Reviewer(_display_name(user), user.id)
     if _legacy_admin_token_ok(request.headers.get("X-Admin-Token") or ""):
         return Reviewer(ADMIN_USER, None)
     raise HTTPException(403, "Reviewer access required")
@@ -187,7 +192,7 @@ def _nav_user(user: Optional[CurrentUser]) -> Optional[dict]:
     """Shape the logged-in user for the shared nav (_nav.html)."""
     if not user:
         return None
-    return {"name": user.display_name or user.phone, "role": user.role,
+    return {"name": _display_name(user), "role": user.role,
             "can_review": _can_review(user)}
 
 
@@ -356,7 +361,7 @@ async def report(
     # anonymous behavior (free-text reported_by from the form). No hard auth required.
     user = get_current_user(request)
     if user:
-        reported["reported_by"] = user.display_name or user.phone
+        reported["reported_by"] = _display_name(user)
         reported["reported_by_user_id"] = user.id
         reported["reporter_phone"] = user.phone
 
@@ -404,7 +409,7 @@ def api_register(body: RegisterIn):
     with Session() as s:
         try:
             user = auth.create_user(
-                s, body.phone, body.password, display_name=body.display_name,
+                s, body.password, phone=body.phone, display_name=body.display_name,
                 email=body.email, role="contributor", registration_source="mobile")
         except auth.DuplicatePhone:
             raise HTTPException(409, "An account with this phone already exists")
@@ -526,10 +531,10 @@ def review_login_form(request: Request, error: Optional[str] = None):
 
 
 @app.post("/review/login")
-def review_login(request: Request, phone: str = Form(...), password: str = Form(...)):
+def review_login(request: Request, username: str = Form(...), password: str = Form(...)):
     Session = get_session_factory()
     with Session() as s:
-        user = auth.authenticate(s, phone, password)
+        user = auth.authenticate(s, username, password)
         # The web app is for operators — only telecaller/admin accounts may sign in here.
         if not user or user.role not in REVIEW_ROLES:
             return RedirectResponse("/review/login?error=1", status_code=303)

@@ -33,6 +33,10 @@ class DuplicatePhone(Exception):
     """Raised when registering a phone that already has an account."""
 
 
+class DuplicateUsername(Exception):
+    """Raised when creating a username that already exists."""
+
+
 # ── Phone + password ──────────────────────────────────────────────────────────────
 
 def normalize_phone(raw: Optional[str]) -> str:
@@ -44,6 +48,11 @@ def normalize_phone(raw: Optional[str]) -> str:
     plus = s.startswith("+")
     digits = re.sub(r"\D", "", s)
     return ("+" + digits) if plus else digits
+
+
+def normalize_username(raw: Optional[str]) -> Optional[str]:
+    """Usernames are case-insensitive — store and compare lowercased."""
+    return (raw or "").strip().lower() or None
 
 
 def hash_password(password: str) -> str:
@@ -70,33 +79,49 @@ def verify_password(password: str, stored: str) -> bool:
 # ── Users ─────────────────────────────────────────────────────────────────────────
 
 def find_by_phone(s, phone: str) -> Optional[User]:
-    """Look up by normalized phone, falling back to the raw value (lets a non-numeric
-    seed-admin login id like 'admin' resolve too)."""
-    seen = []
-    for cand in (normalize_phone(phone), (phone or "").strip()):
-        if cand and cand not in seen:
-            seen.append(cand)
-            u = s.execute(select(User).where(User.phone == cand)).scalar_one_or_none()
-            if u:
-                return u
-    return None
-
-
-def create_user(s, phone: str, password: str, display_name: Optional[str] = None,
-                role: str = "contributor", email: Optional[str] = None,
-                registration_source: Optional[str] = None) -> User:
-    """Create and flush a new user. Raises DuplicatePhone / ValueError on bad input."""
     ph = normalize_phone(phone)
     if not ph:
-        raise ValueError("a valid phone number is required")
+        return None
+    return s.execute(select(User).where(User.phone == ph)).scalar_one_or_none()
+
+
+def find_by_username(s, username: str) -> Optional[User]:
+    uname = normalize_username(username)
+    if not uname:
+        return None
+    return s.execute(select(User).where(User.username == uname)).scalar_one_or_none()
+
+
+def find_by_identifier(s, identifier: str) -> Optional[User]:
+    """Resolve a login id that may be a username (operators) or a phone (contributors)."""
+    ident = (identifier or "").strip()
+    if not ident:
+        return None
+    return find_by_username(s, ident) or find_by_phone(s, ident)
+
+
+def create_user(s, password: str, phone: Optional[str] = None,
+                username: Optional[str] = None, display_name: Optional[str] = None,
+                role: str = "contributor", email: Optional[str] = None,
+                registration_source: Optional[str] = None) -> User:
+    """Create and flush a new user. Needs at least one login identity (phone for
+    contributors, username for operators). Raises DuplicatePhone / DuplicateUsername /
+    ValueError on bad input."""
+    ph = normalize_phone(phone) or None
+    uname = normalize_username(username)
+    if not ph and not uname:
+        raise ValueError("a phone number or a username is required")
     if not password or len(password) < _MIN_PASSWORD_LEN:
         raise ValueError(f"password must be at least {_MIN_PASSWORD_LEN} characters")
     if role not in ROLES:
         raise ValueError(f"role must be one of {ROLES}")
-    if s.execute(select(User).where(User.phone == ph)).scalar_one_or_none():
+    if ph and find_by_phone(s, ph):
         raise DuplicatePhone(ph)
+    if uname and find_by_username(s, uname):
+        raise DuplicateUsername(uname)
     user = User(
         phone=ph,
+        username=uname,
         password_hash=hash_password(password),
         display_name=(display_name or "").strip() or None,
         email=(email or "").strip() or None,
@@ -108,9 +133,9 @@ def create_user(s, phone: str, password: str, display_name: Optional[str] = None
     return user
 
 
-def authenticate(s, phone: str, password: str) -> Optional[User]:
-    """Return the active user for these credentials, or None."""
-    user = find_by_phone(s, phone)
+def authenticate(s, identifier: str, password: str) -> Optional[User]:
+    """Return the active user for these credentials (identifier = username or phone)."""
+    user = find_by_identifier(s, identifier)
     if not user or not user.is_active:
         return None
     if not verify_password(password, user.password_hash):
@@ -163,16 +188,16 @@ def delete_session(s, token: Optional[str]) -> None:
 
 def ensure_seed_admin(s) -> Optional[User]:
     """Make sure at least one admin exists so a fresh deploy is usable. Identity comes
-    from env: ADMIN_PHONE (default = ADMIN_USER, e.g. 'admin') + ADMIN_PASSWORD. If a
-    user with that phone already exists it is promoted to admin; otherwise one is
+    from env: ADMIN_USERNAME (default = ADMIN_USER, e.g. 'admin') + ADMIN_PASSWORD. If a
+    user with that username already exists it is promoted to admin; otherwise one is
     created. Returns the admin, or None if one already existed."""
     if s.execute(select(User).where(User.role == "admin")).scalar_one_or_none():
         return None
-    login_id = os.environ.get("ADMIN_PHONE") or os.environ.get("ADMIN_USER", "admin")
+    username = normalize_username(
+        os.environ.get("ADMIN_USERNAME") or os.environ.get("ADMIN_USER") or "admin")
     password = os.environ.get("ADMIN_PASSWORD") or "admin"
-    phone = normalize_phone(login_id) or login_id.strip()  # allow non-numeric 'admin'
 
-    existing = s.execute(select(User).where(User.phone == phone)).scalar_one_or_none()
+    existing = find_by_username(s, username)
     if existing:
         existing.role = "admin"
         existing.is_active = True
@@ -180,7 +205,7 @@ def ensure_seed_admin(s) -> Optional[User]:
         return existing
 
     admin = User(
-        phone=phone,
+        username=username,
         password_hash=hash_password(password),
         display_name="Administrator",
         role="admin",
