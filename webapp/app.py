@@ -7,8 +7,13 @@ Run:  uvicorn webapp.app:app --host 0.0.0.0 --port 8000
 - GET  /api/trucks            JSON list (q, source, limit, offset)
 - GET  /api/trucks/{id}       JSON detail
 - POST /api/trucks/report     mobile field report: 1-5 photos + fields -> one record
-- PATCH /api/trucks/{id}      telecaller review decision (admin auth)
-- GET  /review                telecaller review queue (admin auth)
+- POST /api/auth/register     mobile contributor self-registration (phone + password)
+- POST /api/auth/login        mobile login -> bearer token
+- GET  /api/auth/me           current account (bearer)
+- POST /api/auth/logout       revoke the bearer session
+- PATCH /api/trucks/{id}      telecaller review decision (reviewer auth)
+- GET  /review                telecaller review queue (reviewer auth)
+- GET/POST /review/login      telecaller web login (users table, session cookie)
 
 Photos are never stored on the system — every source processes frames/images and
 keeps only the extracted data.
@@ -16,6 +21,7 @@ keeps only the extracted data.
 import hmac
 import os
 import re
+from collections import namedtuple
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Optional
@@ -23,13 +29,15 @@ from typing import List, Optional
 from fastapi import (
     Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile,
 )
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from sqlalchemy import distinct, func, or_, select
 
+from pipeline import auth
 from pipeline.config import Config
-from pipeline.db import SourceType, Truck, get_session_factory, init_db
+from pipeline.db import SourceType, Truck, User, get_session_factory, init_db
 
 _HERE = Path(__file__).parent
 
@@ -64,9 +72,14 @@ templates.env.filters["phones"] = _phone_list
 
 @app.on_event("startup")
 def _startup():
-    # Create the table if it isn't there yet; browsing an empty DB still works.
+    # Create the tables if they aren't there yet; browsing an empty DB still works.
     try:
         init_db()
+        # Make sure an admin exists so a fresh deploy is immediately usable.
+        Session = get_session_factory()
+        with Session() as s:
+            auth.ensure_seed_admin(s)
+            s.commit()
     except Exception as e:  # pragma: no cover - surfaced in logs
         print(f"[webapp] WARNING: could not reach the database: {e}")
 
@@ -95,9 +108,11 @@ class _Models:
 _models = _Models()
 
 
-# ── Admin auth (simple shared password) ──────────────────────────────────────────
-# Protects the telecaller review page and the PATCH endpoint, which together decide
-# reward eligibility. Upgrade to per-user accounts later; keep behind HTTPS.
+# ── Auth: unified user accounts (mobile bearer + web cookie) ─────────────────────
+# One `users` table backs both audiences. Contributors self-register via the mobile
+# API; telecallers/admins are created by an admin (scripts/create_user.py). The
+# review page + PATCH endpoint (which decide reward eligibility) require a
+# telecaller/admin session. Keep everything behind HTTPS in production.
 
 ADMIN_USER = os.environ.get("ADMIN_USER", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
@@ -106,24 +121,74 @@ if not ADMIN_PASSWORD:
     print("[webapp] WARNING: ADMIN_PASSWORD not set — using default 'admin'. "
           "Set ADMIN_PASSWORD before deploying.")
 
+SESSION_COOKIE = "session"
+# Send the Secure flag on the session cookie once HTTPS fronts the app.
+SECURE_COOKIES = os.environ.get("SECURE_COOKIES", "0").lower() not in ("", "0", "false", "no")
+SESSION_TTL_DAYS = 30
+REVIEW_ROLES = {"telecaller", "admin"}
 
-def _token_ok(value: str) -> bool:
+# Declared only so Swagger shows an "Authorize" (bearer) button on the mobile endpoints
+# and sends the token. auto_error=False keeps it optional — the actual resolution still
+# happens in get_current_user (which also honours the web session cookie).
+bearer_scheme = HTTPBearer(
+    auto_error=False,
+    description="Paste the token returned by /api/auth/login or /api/auth/register.")
+
+# Lightweight, session-detached identities passed around the request.
+CurrentUser = namedtuple("CurrentUser", "id phone display_name role")
+Reviewer = namedtuple("Reviewer", "name user_id")
+
+
+def _request_token(request: Request) -> Optional[str]:
+    """Pull the login token from the request. An explicit Bearer header wins over the
+    web session cookie, so an API client's token isn't shadowed by an ambient cookie."""
+    authz = request.headers.get("Authorization", "")
+    if authz.lower().startswith("bearer "):
+        token = authz[7:].strip()
+        if token:
+            return token
+    return request.cookies.get(SESSION_COOKIE) or None
+
+
+def get_current_user(request: Request) -> Optional[CurrentUser]:
+    """Resolve the logged-in account (cookie or bearer), or None."""
+    token = _request_token(request)
+    if not token:
+        return None
+    Session = get_session_factory()
+    with Session() as s:
+        u = auth.resolve_session(s, token)
+        if not u:
+            return None
+        return CurrentUser(u.id, u.phone, u.display_name, u.role)
+
+
+def _can_review(user: Optional[CurrentUser]) -> bool:
+    return bool(user) and user.role in REVIEW_ROLES
+
+
+def _legacy_admin_token_ok(value: str) -> bool:
+    """Back-compat: the old shared ADMIN_PASSWORD via X-Admin-Token (automation only)."""
     return bool(value) and hmac.compare_digest(value, ADMIN_PASSWORD)
 
 
-def _check_admin(request: Request) -> Optional[str]:
-    """Return the admin identity if authed (cookie for the browser, X-Admin-Token
-    header for API/automation), else None."""
-    tok = request.cookies.get("admin_token") or request.headers.get("X-Admin-Token")
-    return ADMIN_USER if _token_ok(tok or "") else None
+def require_reviewer(request: Request) -> Reviewer:
+    """Dependency for review endpoints. Accepts a telecaller/admin session, or the
+    legacy X-Admin-Token == ADMIN_PASSWORD for automation. 403 otherwise."""
+    user = get_current_user(request)
+    if _can_review(user):
+        return Reviewer(user.display_name or user.phone, user.id)
+    if _legacy_admin_token_ok(request.headers.get("X-Admin-Token") or ""):
+        return Reviewer(ADMIN_USER, None)
+    raise HTTPException(403, "Reviewer access required")
 
 
-def require_admin(request: Request) -> str:
-    """FastAPI dependency for JSON endpoints — 401 if not authed."""
-    who = _check_admin(request)
-    if not who:
-        raise HTTPException(401, "Admin authentication required")
-    return who
+def _nav_user(user: Optional[CurrentUser]) -> Optional[dict]:
+    """Shape the logged-in user for the shared nav (_nav.html)."""
+    if not user:
+        return None
+    return {"name": user.display_name or user.phone, "role": user.role,
+            "can_review": _can_review(user)}
 
 
 # ── Query helpers ────────────────────────────────────────────────────────────────
@@ -230,8 +295,10 @@ def truck_panel(request: Request, truck_id: int):
 
 @app.post("/api/trucks/report")
 async def report(
+    request: Request,
     images: List[UploadFile] = File(...),
     phone_number: str = Form(...),
+    _creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     vehicle_number: Optional[str] = Form(None),
     loaded_status: Optional[str] = Form(None),
     number_of_wheels: Optional[int] = Form(None),
@@ -284,6 +351,15 @@ async def report(
         "location": location, "latitude": latitude, "longitude": longitude,
         "captured_at": captured_at, "reported_by": reported_by,
     }
+    # Transition mode: if the contributor is logged in (bearer/cookie), attribute the
+    # report to that account and snapshot their name/phone; otherwise keep today's
+    # anonymous behavior (free-text reported_by from the form). No hard auth required.
+    user = get_current_user(request)
+    if user:
+        reported["reported_by"] = user.display_name or user.phone
+        reported["reported_by_user_id"] = user.id
+        reported["reporter_phone"] = user.phone
+
     # Always stored; the photos decide whether it's VERIFIED or UNVERIFIED.
     fields = reconcile(reported, ocr, Config())
     row = insert_report(fields, images_count=len(decoded))
@@ -295,6 +371,7 @@ async def report(
         "reason": fields["reason"],
         "plate_status": fields["plate_status"],
         "phone_status": fields["phone_status"],
+        "reported_by_user_id": row.get("reported_by_user_id"),
     })
 
 
@@ -305,7 +382,109 @@ def report_test(request: Request):
     return templates.TemplateResponse(request=request, name="report_test.html", context={})
 
 
-# ── Telecaller review: PATCH decision + queue page (admin auth) ────────────────────
+# ── Auth API (mobile contributors) ────────────────────────────────────────────────
+# The mobile app's register/login screens call these. Registration only ever creates a
+# `contributor`; telecaller/admin accounts are made by an admin via scripts/create_user.py.
+
+class RegisterIn(BaseModel):
+    phone: str
+    password: str
+    display_name: Optional[str] = None
+    email: Optional[str] = None
+
+
+class LoginIn(BaseModel):
+    phone: str
+    password: str
+
+
+@app.post("/api/auth/register")
+def api_register(body: RegisterIn):
+    Session = get_session_factory()
+    with Session() as s:
+        try:
+            user = auth.create_user(
+                s, body.phone, body.password, display_name=body.display_name,
+                email=body.email, role="contributor", registration_source="mobile")
+        except auth.DuplicatePhone:
+            raise HTTPException(409, "An account with this phone already exists")
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        token = auth.create_session(s, user, ttl_days=SESSION_TTL_DAYS)
+        out = user.as_dict()
+        s.commit()
+    return JSONResponse({"token": token, "user": out}, status_code=201)
+
+
+@app.post("/api/auth/login")
+def api_login(body: LoginIn):
+    Session = get_session_factory()
+    with Session() as s:
+        user = auth.authenticate(s, body.phone, body.password)
+        if not user:
+            raise HTTPException(401, "Invalid phone or password")
+        token = auth.create_session(s, user, ttl_days=SESSION_TTL_DAYS)
+        out = user.as_dict()
+        s.commit()
+    return JSONResponse({"token": token, "user": out})
+
+
+@app.get("/api/auth/me")
+def api_me(request: Request,
+           _creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    current = get_current_user(request)
+    if not current:
+        raise HTTPException(401, "Not authenticated")
+    Session = get_session_factory()
+    with Session() as s:
+        u = s.get(User, current.id)
+        return JSONResponse({"user": u.as_dict() if u else None})
+
+
+@app.get("/api/auth/me/reports")
+def api_my_reports(request: Request,
+                   limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0),
+                   _creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    """The logged-in contributor's own submissions (newest first) + a status summary,
+    so the app can show upload history and reward state. Only attributed reports appear —
+    submissions made while logged out aren't tied to an account."""
+    current = get_current_user(request)
+    if not current:
+        raise HTTPException(401, "Not authenticated")
+    Session = get_session_factory()
+    with Session() as s:
+        mine = Truck.reported_by_user_id == current.id
+        total = s.execute(select(func.count()).select_from(Truck).where(mine)).scalar_one()
+        counts = dict(s.execute(
+            select(Truck.review_status, func.count()).where(mine)
+            .group_by(Truck.review_status)).all())
+        rows = s.execute(select(Truck).where(mine).order_by(Truck.detected_at.desc())
+                         .limit(limit).offset(offset)).scalars().all()
+        reports = [r.as_dict() for r in rows]
+    return JSONResponse({
+        "total": total,
+        "summary": {  # PASSED = reward-eligible
+            "pending": counts.get("PENDING", 0),
+            "passed": counts.get("PASSED", 0),
+            "rejected": counts.get("REJECTED", 0),
+        },
+        "limit": limit, "offset": offset,
+        "reports": reports,
+    })
+
+
+@app.post("/api/auth/logout")
+def api_logout(request: Request,
+               _creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme)):
+    token = _request_token(request)
+    Session = get_session_factory()
+    with Session() as s:
+        auth.delete_session(s, token)
+        s.commit()
+    return JSONResponse({"ok": True})
+
+
+# ── Telecaller review: PATCH decision + queue page (reviewer auth) ─────────────────
 
 _REVIEW_STATES = {"PENDING", "PASSED", "REJECTED"}
 
@@ -317,7 +496,8 @@ class ReviewPatch(BaseModel):
 
 
 @app.patch("/api/trucks/{truck_id}")
-def patch_truck(truck_id: int, body: ReviewPatch, admin: str = Depends(require_admin)):
+def patch_truck(truck_id: int, body: ReviewPatch,
+                reviewer: Reviewer = Depends(require_reviewer)):
     """Telecaller decision. review_status PASSED => contributor is reward-eligible."""
     status = (body.review_status or "").strip().upper()
     if status not in _REVIEW_STATES:
@@ -328,7 +508,8 @@ def patch_truck(truck_id: int, body: ReviewPatch, admin: str = Depends(require_a
         if not row:
             raise HTTPException(404, "Truck not found")
         row.review_status = status
-        row.reviewed_by = (body.reviewed_by or "").strip() or admin
+        row.reviewed_by = (body.reviewed_by or "").strip() or reviewer.name
+        row.reviewed_by_user_id = reviewer.user_id
         row.reviewed_at = datetime.now()
         row.review_note = (body.review_note or "").strip() or None
         s.commit()
@@ -337,24 +518,39 @@ def patch_truck(truck_id: int, body: ReviewPatch, admin: str = Depends(require_a
 
 @app.get("/review/login", response_class=HTMLResponse)
 def review_login_form(request: Request, error: Optional[str] = None):
+    # Already signed in as a reviewer? Skip straight to the queue.
+    if _can_review(get_current_user(request)):
+        return RedirectResponse("/review", status_code=303)
     return templates.TemplateResponse(request=request, name="login.html",
                                       context={"error": bool(error)})
 
 
 @app.post("/review/login")
-def review_login(password: str = Form(...)):
-    if not _token_ok(password):
-        return RedirectResponse("/review/login?error=1", status_code=303)
+def review_login(request: Request, phone: str = Form(...), password: str = Form(...)):
+    Session = get_session_factory()
+    with Session() as s:
+        user = auth.authenticate(s, phone, password)
+        # The web app is for operators — only telecaller/admin accounts may sign in here.
+        if not user or user.role not in REVIEW_ROLES:
+            return RedirectResponse("/review/login?error=1", status_code=303)
+        token = auth.create_session(s, user, ttl_days=SESSION_TTL_DAYS)
+        s.commit()
     resp = RedirectResponse("/review", status_code=303)
-    # Cookie value is the shared secret; httponly so page JS can't read it.
-    resp.set_cookie("admin_token", password, httponly=True, samesite="lax", max_age=86400)
+    resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax",
+                    secure=SECURE_COOKIES, max_age=SESSION_TTL_DAYS * 86400)
     return resp
 
 
 @app.get("/review/logout")
-def review_logout():
+def review_logout(request: Request):
+    token = _request_token(request)
+    if token:
+        Session = get_session_factory()
+        with Session() as s:
+            auth.delete_session(s, token)
+            s.commit()
     resp = RedirectResponse("/review/login", status_code=303)
-    resp.delete_cookie("admin_token")
+    resp.delete_cookie(SESSION_COOKIE)
     return resp
 
 
@@ -368,8 +564,8 @@ def _pending_reports(s) -> int:
 @app.get("/review", response_class=HTMLResponse)
 def review(request: Request, review: str = "pending",
            verification: str = "all", page: int = Query(1, ge=1)):
-    who = _check_admin(request)
-    if not who:
+    user = get_current_user(request)
+    if not _can_review(user):
         return RedirectResponse("/review/login", status_code=303)
 
     def _filt(stmt):
@@ -397,7 +593,7 @@ def review(request: Request, review: str = "pending",
     pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     return templates.TemplateResponse(request=request, name="review.html", context={
         "reports": reports, "review": review, "verification": verification,
-        "page": page, "pages": pages, "total": total, "admin": who,
+        "page": page, "pages": pages, "total": total, "user": _nav_user(user),
         "pending_count": pending_count,
     })
 
@@ -442,7 +638,8 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
                                   Truck.review_status == "PASSED"))
         return stmt
 
-    admin = _check_admin(request)  # drives the shared nav (tabs + login/logout)
+    user = get_current_user(request)  # drives the shared nav (tabs + login/logout)
+    can_review = _can_review(user)
     Session = get_session_factory()
     with Session() as s:
         total = s.execute(_filtered(select(func.count()).select_from(Truck))).scalar_one()
@@ -454,7 +651,7 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
         cities = [c for (c,) in s.execute(
             select(distinct(Truck.city)).where(Truck.city.isnot(None))
             .order_by(Truck.city)).all()]
-        pending_count = _pending_reports(s) if admin else 0
+        pending_count = _pending_reports(s) if can_review else 0
 
     trucks = []
     for r in rows:
@@ -481,5 +678,5 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
         "sort": sort, "dir": "asc" if not descending else "desc", "fresh": fresh,
         "show_load": show_load, "show_location": show_location,
         "page": page, "pages": pages, "total": total,
-        "admin": admin, "pending_count": pending_count,
+        "user": _nav_user(user), "pending_count": pending_count,
     })

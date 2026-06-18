@@ -22,7 +22,8 @@ _REPORT_COLUMNS = (
     "company_name", "vehicle_type", "city", "other_text", "website",
     "phone_number", "phone_reported", "phone_ocr",
     "loaded_status", "location", "latitude", "longitude", "num_wheels",
-    "reported_by", "verification_status", "frames", "plate_candidates", "body_texts",
+    "reported_by", "reported_by_user_id", "reporter_phone",
+    "verification_status", "frames", "plate_candidates", "body_texts",
 )
 
 
@@ -40,6 +41,8 @@ def insert_report(fields: dict, images_count: int = None, session_factory=None) 
         s.flush()  # assigns truck.id for the audit link
         s.add(SubmissionLog(
             reported_by=fields.get("reported_by"),
+            reported_by_user_id=fields.get("reported_by_user_id"),
+            reporter_phone=fields.get("reporter_phone"),
             status=fields.get("verification_status"),
             reason=fields.get("reason"),
             vehicle_reported=fields.get("vehicle_reported"),

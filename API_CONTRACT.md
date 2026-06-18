@@ -3,11 +3,53 @@
 Submit one truck sighting (1–5 photos + details) → creates one record.
 
 - **Method / URL:** `POST /api/trucks/report`
-- **Base URL:** `http://<server-host>:8000` (dev: `http://localhost:8000`)
+- **Base URL:** `http://34.31.185.19:8090` (HTTPS coming — only the base changes; local dev: `http://localhost:8000`)
 - **Content-Type:** `multipart/form-data`
-- **Auth:** none required to submit.
+- **Auth:** optional. If the user is logged in, send `Authorization: Bearer <token>` and
+  the report is attributed to that account; without it the submission is anonymous
+  (still accepted). See **Authentication** below.
 - **Important:** the photos are processed (OCR) and then **discarded** — images are
   never stored. We keep only the extracted data.
+
+---
+
+## Authentication (recommended)
+
+Contributors register and log in from the app. Auth is a **bearer token** — store it
+after register/login and send it as `Authorization: Bearer <token>` on report submissions
+so rewards attribute to the right person. Tokens are long-lived (30 days); on `401` from
+`/api/auth/me`, send the user back through login.
+
+| Method / URL | Body (JSON) | Returns |
+|---|---|---|
+| `POST /api/auth/register` | `{ "phone", "password", "display_name"?, "email"? }` | `201` `{ "token", "user" }` |
+| `POST /api/auth/login` | `{ "phone", "password" }` | `200` `{ "token", "user" }` |
+| `GET  /api/auth/me` | — (bearer) | `200` `{ "user" }` |
+| `GET  /api/auth/me/reports?limit=&offset=` | — (bearer) | `200` `{ total, summary, reports[] }` |
+| `POST /api/auth/logout` | — (bearer) | `200` `{ "ok": true }` |
+
+**`GET /api/auth/me/reports`** returns the logged-in user's own submissions (newest first)
+plus a `summary` of `{pending, passed, rejected}` counts for the reward UI. `passed` =
+reward-eligible. Each item is a full truck record (same shape as the report response's
+`truck`). Only reports submitted **while logged in** appear (anonymous ones aren't linked).
+
+- `phone` is the identity (normalized — spaces/dashes ignored); `password` min 6 chars.
+- Registration always creates a **contributor**. (Telecaller/admin accounts are internal,
+  created by an admin — not via this API.)
+- Errors: `409` phone already registered, `400` invalid input, `401` bad credentials.
+
+```bash
+# register, then submit an attributed report
+TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"phone":"9811008120","password":"secret123","display_name":"Ravi"}' | jq -r .token)
+
+curl -X POST http://localhost:8000/api/trucks/report \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "images=@truck_front.jpg" -F "phone_number=9928001122"
+```
+
+`user` object shape: `{ id, phone, email, display_name, role, is_active, registration_source, created_at }` (never includes the password).
 
 ---
 
@@ -24,7 +66,7 @@ Submit one truck sighting (1–5 photos + details) → creates one record.
 | `latitude` | float | optional | GPS, e.g. `26.9124`. |
 | `longitude` | float | optional | GPS, e.g. `75.7873`. |
 | `captured_at` | string (ISO-8601) | optional | When the photo was taken, e.g. `2026-06-16T14:30:00+05:30`. Defaults to server time. |
-| `reported_by` | string | optional | The app user's id/username — **send this** so rewards can be attributed. |
+| `reported_by` | string | optional | Free-text reporter label for **anonymous** submissions. When a `Bearer` token is sent this is ignored — the logged-in account is used instead (preferred). |
 
 ### Example (curl)
 ```bash
@@ -71,10 +113,13 @@ curl -X POST http://localhost:8000/api/trucks/report \
     "num_wheels": 12,
     "phone_reported": "9811008120",
     "phone_ocr": "9811008120",
-    "reported_by": "driver_app_9087",
+    "reported_by": "Ravi",
+    "reported_by_user_id": 42,
+    "reporter_phone": "9811008120",
     "verification_status": "VERIFIED",
     "review_status": "PENDING",
     "reviewed_by": null,
+    "reviewed_by_user_id": null,
     "reviewed_at": null,
     "review_note": null,
     "plate_candidates": { "RJ14CA1234": 3 },
@@ -87,7 +132,8 @@ curl -X POST http://localhost:8000/api/trucks/report \
   "review_status": "PENDING",
   "reason": "vehicle number confirmed from photos",
   "plate_status": "VERIFIED",
-  "phone_status": "MATCH"
+  "phone_status": "MATCH",
+  "reported_by_user_id": 42
 }
 ```
 
@@ -100,6 +146,7 @@ curl -X POST http://localhost:8000/api/trucks/report \
 | `reason` | Human-readable explanation of the verification result. |
 | `phone_status` | `MATCH` / `MERGED` / `REPORTED_ONLY` — how the typed phone compared to OCR. |
 | `images_processed` | How many of the uploaded images were readable. |
+| `reported_by_user_id` | The logged-in contributor's id when a bearer token was sent; `null` for anonymous submissions. |
 
 > **Note:** Submission always succeeds with `200` even when `verification_status` is
 > `UNVERIFIED` — the record is still stored and a telecaller will review it. A truck
@@ -145,7 +192,8 @@ curl http://localhost:8000/api/trucks/124
 
 ## Tips for the mobile dev
 - Send each photo as a separate `images` part (don't zip or base64 them).
-- Always include `reported_by` so rewards attribute to the right user.
+- Prefer logging the user in and sending `Authorization: Bearer <token>` so rewards
+  attribute to the right account (replaces the old free-text `reported_by`).
 - Treat `200` as "received & stored"; show the user "Pending review" until a later
   `GET` shows `review_status: PASSED`.
 - Interactive, always-up-to-date API docs are served at **`/docs`** (Swagger UI) and

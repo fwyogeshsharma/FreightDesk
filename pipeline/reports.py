@@ -116,6 +116,9 @@ def reconcile(reported: dict, ocr: dict, config) -> dict:
         "longitude":        reported.get("longitude"),
         "num_wheels":       reported.get("number_of_wheels"),
         "reported_by":      (reported.get("reported_by") or "").strip() or None,
+        # Reporter identity snapshot (set when the contributor was logged in).
+        "reported_by_user_id": reported.get("reported_by_user_id"),
+        "reporter_phone":   (reported.get("reporter_phone") or "").strip() or None,
         "verification_status": verification_status,
         "frames":           ocr.get("frames", 0) or 0,
         "plate_candidates": ocr.get("plate_candidates") or None,

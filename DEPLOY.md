@@ -27,8 +27,10 @@ copy .env.example .env          # adjust passwords if you like
 # Just the database (run the pipeline + app on the host):
 docker compose up -d db
 
-# Create the table (from the host venv):
+# Create / upgrade the schema (from the host venv):
 .venv\Scripts\python.exe scripts\init_db.py
+.venv\Scripts\python.exe scripts\migrate_report_fields.py    # field-report columns
+.venv\Scripts\python.exe scripts\migrate_user_accounts.py    # users + attribution columns
 
 # Process videos into the DB (+ keep the CSV as a backup):
 run.bat --input videos --sink both          # or --sink db
@@ -104,7 +106,12 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 # 5. Create the database schema (one-off, inside the web image)
 docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web python scripts/init_db.py
 docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web python scripts/migrate_report_fields.py
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web python scripts/migrate_user_accounts.py
 ```
+
+> `migrate_user_accounts.py` adds the `users` + `user_sessions` tables and the reporter/
+> reviewer attribution columns, then seeds an admin from `ADMIN_PHONE`/`ADMIN_PASSWORD`.
+> It's idempotent — safe to re-run after a `git pull`.
 
 Now **`https://<your-domain>`** serves the broker console; `/review` is the telecaller
 console (Telecaller Login = `ADMIN_PASSWORD`); the mobile app posts to
@@ -165,12 +172,16 @@ run_webapp.bat
 
 ## API quick reference
 
-- `GET  /` — broker web UI (search, newest-first, click-to-call)
+- `GET  /` — broker web UI (search, newest-first, click-to-call) — **public**
 - `GET  /api/trucks?q=&source=&limit=&offset=` — JSON list
 - `GET  /api/trucks/{id}` — JSON detail (incl. `verification_status`, `review_status`)
 - `POST /api/trucks/report` — mobile field report → one truck record (JSON)
-- `PATCH /api/trucks/{id}` — telecaller review decision (admin auth)
-- `GET  /review` — telecaller review queue (admin login)
+- `POST /api/auth/register` — mobile contributor self-registration → bearer token
+- `POST /api/auth/login` — mobile login → bearer token
+- `GET  /api/auth/me` — current account (bearer)
+- `POST /api/auth/logout` — revoke the bearer session
+- `PATCH /api/trucks/{id}` — telecaller review decision (reviewer auth)
+- `GET  /review` — telecaller review queue (web login)
 
 ### `POST /api/trucks/report` — contract for the mobile app
 
@@ -217,14 +228,58 @@ SELECT reported_by, count(*) total,
 FROM submission_log GROUP BY reported_by ORDER BY unverified DESC;
 ```
 
+### User accounts & authentication
+
+One unified `users` table serves two audiences, distinguished by `role`:
+
+| Role | Who | Created how | Access |
+|---|---|---|---|
+| `contributor` | external mobile uploaders | self-register in the app | submit reports |
+| `telecaller` | internal reviewers | **admin, via CLI** | the `/review` queue + PATCH |
+| `admin` | operators | seeded from env / CLI | everything + manage users |
+
+Auth is **opaque session tokens** (the `user_sessions` table) — the **same tokens** back
+the mobile **bearer** header and the web **session cookie**. Passwords are stored as
+stdlib PBKDF2-SHA256 (no third-party crypto). `phone` is the login id (normalized).
+
+**Mobile API (the app's register/login screens):**
+```bash
+# register (always a contributor) -> {token, user}
+curl -X POST -H "Content-Type: application/json" \
+     -d '{"phone":"9811008120","password":"secret123","display_name":"Ravi"}' \
+     https://<host>/api/auth/register
+
+# login -> {token, user};  then send the token on every call:
+curl -H "Authorization: Bearer <token>" https://<host>/api/auth/me
+# attributed report: add  -H "Authorization: Bearer <token>"  to POST /api/trucks/report
+```
+Report submission is **transition mode**: with a valid bearer token the row is attributed
+to that user (`reported_by_user_id` + `reporter_phone`/name snapshots); without one it
+stays anonymous exactly as before — the app can adopt auth at its own pace.
+
+**Internal operators (telecallers/admins) are created by an admin — no self-service:**
+```bash
+# in a container (or host venv): create / manage operator accounts
+docker compose run --rm web python scripts/create_user.py create --phone 9000000001 --role telecaller --name "Asha"
+docker compose run --rm web python scripts/create_user.py list
+docker compose run --rm web python scripts/create_user.py set-role  --phone 9000000001 --role admin
+docker compose run --rm web python scripts/create_user.py set-password --phone 9000000001
+docker compose run --rm web python scripts/create_user.py deactivate --phone 9000000001
+```
+The **seed admin** is created automatically on first start from `ADMIN_PHONE`
+(default = `ADMIN_USER`) + `ADMIN_PASSWORD` — log into the web app with that phone +
+password, then add telecallers with the CLI. Set `SECURE_COOKIES=1` once HTTPS fronts the
+app. The legacy `X-Admin-Token: <ADMIN_PASSWORD>` still authenticates the PATCH endpoint
+for automation.
+
 ### Telecaller review & rewards
 
 Two statuses per report: **`verification_status`** (machine, from photos:
 VERIFIED/UNVERIFIED) and **`review_status`** (human telecaller: PENDING → PASSED /
 REJECTED). Every report starts PENDING.
 
-- Telecallers open **`/review`** (log in with `ADMIN_PASSWORD`), work the **pending**
-  queue, call the number to confirm the truck is real, then click **Pass** or **Reject**.
+- Telecallers open **`/review`** (log in with their **phone + password**), work the
+  **pending** queue, call the number to confirm the truck is real, then **Pass**/**Reject**.
 - Programmatic equivalent — `PATCH /api/trucks/{id}` with header `X-Admin-Token: <ADMIN_PASSWORD>`:
   ```
   curl -X PATCH -H "X-Admin-Token: $ADMIN_PASSWORD" -H "Content-Type: application/json" \

@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import (
-    BigInteger, DateTime, Enum, Float, Index, Integer, String, Text,
+    BigInteger, Boolean, DateTime, Enum, Float, Index, Integer, String, Text,
     create_engine, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -71,13 +71,20 @@ class Truck(Base):
     # Phone provenance: what the reporter typed vs what OCR read; phone_number = merged.
     phone_reported: Mapped[Optional[str]] = mapped_column(String(64))
     phone_ocr: Mapped[Optional[str]] = mapped_column(String(128))
+    # Reporter identity. `reported_by` is the human-readable name/label snapshot (works
+    # for anonymous submissions too); `reported_by_user_id` links to the users table when
+    # the contributor was logged in; `reporter_phone` snapshots the reporter's own account
+    # phone at submission time (distinct from phone_reported, which is the TRUCK's phone).
     reported_by: Mapped[Optional[str]] = mapped_column(String(128))
+    reported_by_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, index=True)
+    reporter_phone: Mapped[Optional[str]] = mapped_column(String(32))
     # Trust gate for paid mobile reports: VERIFIED (photos confirm the plate) vs
     # UNVERIFIED (could not confirm — not auto-trusted/paid). NULL for video/stream.
     verification_status: Mapped[Optional[str]] = mapped_column(String(16), index=True)
     # Telecaller/admin decision. PASSED = contributor is reward-eligible.
     review_status: Mapped[Optional[str]] = mapped_column(String(16), index=True)  # PENDING/PASSED/REJECTED
     reviewed_by: Mapped[Optional[str]] = mapped_column(String(128))
+    reviewed_by_user_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     review_note: Mapped[Optional[str]] = mapped_column(String(500))
 
@@ -120,9 +127,12 @@ class Truck(Base):
             "phone_reported": self.phone_reported,
             "phone_ocr": self.phone_ocr,
             "reported_by": self.reported_by,
+            "reported_by_user_id": self.reported_by_user_id,
+            "reporter_phone": self.reporter_phone,
             "verification_status": self.verification_status,
             "review_status": self.review_status,
             "reviewed_by": self.reviewed_by,
+            "reviewed_by_user_id": self.reviewed_by_user_id,
             "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "review_note": self.review_note,
             "plate_candidates": self.plate_candidates,
@@ -144,6 +154,8 @@ class SubmissionLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True)
     reported_by: Mapped[Optional[str]] = mapped_column(String(128), index=True)
+    reported_by_user_id: Mapped[Optional[int]] = mapped_column(BigInteger, index=True)
+    reporter_phone: Mapped[Optional[str]] = mapped_column(String(32))
     status: Mapped[str] = mapped_column(String(16))           # VERIFIED / UNVERIFIED
     reason: Mapped[Optional[str]] = mapped_column(String(255))
     vehicle_reported: Mapped[Optional[str]] = mapped_column(String(32))
@@ -158,6 +170,8 @@ class SubmissionLog(Base):
             "id": self.id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "reported_by": self.reported_by,
+            "reported_by_user_id": self.reported_by_user_id,
+            "reporter_phone": self.reporter_phone,
             "status": self.status,
             "reason": self.reason,
             "vehicle_reported": self.vehicle_reported,
@@ -167,6 +181,51 @@ class SubmissionLog(Base):
             "images_count": self.images_count,
             "truck_id": self.truck_id,
         }
+
+
+class User(Base):
+    """A person who authenticates with FreightDesk. One unified table for both
+    external mobile contributors (self-register, role 'contributor') and internal
+    operators (created by an admin via scripts/create_user.py — 'telecaller'/'admin')."""
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # Phone is the login identity (normalized — digits, optional leading '+').
+    phone: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
+    email: Mapped[Optional[str]] = mapped_column(String(255))  # optional; future internal users
+    display_name: Mapped[Optional[str]] = mapped_column(String(128))
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="contributor")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    registration_source: Mapped[Optional[str]] = mapped_column(String(32))  # mobile / cli / seed
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    def as_dict(self) -> dict:
+        """Public-safe shape — never includes the password hash."""
+        return {
+            "id": self.id,
+            "phone": self.phone,
+            "email": self.email,
+            "display_name": self.display_name,
+            "role": self.role,
+            "is_active": self.is_active,
+            "registration_source": self.registration_source,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class UserSession(Base):
+    """An opaque, revocable login token. Backs both the web session cookie and the
+    mobile bearer token — same table, one auth model."""
+    __tablename__ = "user_sessions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 # ── Engine / session factory ────────────────────────────────────────────────────

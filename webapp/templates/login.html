@@ -31,14 +31,18 @@
       </div>
     </div>
 
-    <p class="text-sm text-slate-400 -mt-1">Sign in to validate submitted reports. Brokers don't need an account — the truck list is open.</p>
+    <p class="text-sm text-slate-400 -mt-1">For telecallers &amp; admins. Brokers don't need an account — the truck list is open. New operator accounts are created by an admin.</p>
 
     {% if error %}
-      <div class="text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">Incorrect password.</div>
+      <div class="text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">Incorrect phone or password, or this account isn't a telecaller.</div>
     {% endif %}
 
-    <label class="text-xs uppercase tracking-wider text-slate-400 -mb-3">Telecaller password</label>
-    <input type="password" name="password" autofocus required placeholder="••••••••"
+    <label class="text-xs uppercase tracking-wider text-slate-400 -mb-3">Phone</label>
+    <input type="text" name="phone" autofocus required placeholder="9811008120" autocomplete="username"
+           class="px-3 py-2.5 rounded-md bg-white/10 border border-white/15 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-400">
+
+    <label class="text-xs uppercase tracking-wider text-slate-400 -mb-3">Password</label>
+    <input type="password" name="password" required placeholder="••••••••" autocomplete="current-password"
            class="px-3 py-2.5 rounded-md bg-white/10 border border-white/15 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-400">
     <button class="bg-amber-500 hover:bg-amber-400 text-ink font-semibold px-3 py-2.5 rounded-md transition-colors">Sign in</button>
     <a href="/" class="text-xs text-slate-400 text-center hover:text-slate-200 transition-colors">← back to truck list</a>
