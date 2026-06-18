@@ -11,41 +11,46 @@
   <script>
     tailwind.config = { theme: { extend: {
       fontFamily: { sans: ['"IBM Plex Sans"','ui-sans-serif','system-ui','sans-serif'] },
-      colors: { ink: '#0a0e14' } }}}
+      colors: { ink: '#0a0e14', canvas: '#eef0f4' } }}}
   </script>
 </head>
-<body class="font-sans text-slate-100 antialiased min-h-screen grid place-items-center bg-ink relative overflow-hidden">
-  <div class="absolute inset-0 opacity-[0.15]"
-       style="background-image: radial-gradient(circle at 1px 1px, #fff 1px, transparent 0); background-size: 22px 22px;"></div>
-  <div class="absolute -top-24 -left-24 w-96 h-96 rounded-full bg-amber-500/20 blur-3xl"></div>
+<body class="font-sans text-slate-800 antialiased bg-canvas min-h-screen flex flex-col">
 
-  <form method="post" action="/review/login"
-        class="relative bg-white/5 backdrop-blur border border-white/10 rounded-2xl p-8 w-full max-w-sm flex flex-col gap-5 shadow-2xl">
-    <div class="flex items-center gap-3">
-      <span class="grid place-items-center w-10 h-10 rounded-md bg-amber-500 text-ink">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-      </span>
-      <div class="leading-tight">
-        <div class="font-bold text-lg">Reviewer Sign-in</div>
-        <div class="text-[11px] uppercase tracking-[0.18em] text-slate-400">FreightDesk · Review Queue access</div>
+  <!-- Same application shell as / and /review -->
+  <header class="sticky top-0 z-20 shadow-sm">
+    {% set nav_active = 'review' %}
+    {% include "_nav.html" %}
+  </header>
+
+  <main class="flex-1 grid place-items-center px-5 py-10">
+    <form method="post" action="/review/login"
+          class="bg-white rounded-xl border border-slate-200 shadow-sm p-7 w-full max-w-sm flex flex-col gap-5">
+      <div class="flex items-center gap-3">
+        <span class="grid place-items-center w-10 h-10 rounded-md bg-amber-500 text-ink">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </span>
+        <div class="leading-tight">
+          <div class="font-bold text-lg text-slate-900">Reviewer Sign-in</div>
+          <div class="text-[11px] uppercase tracking-[0.18em] text-slate-400">Protected area · Review Queue</div>
+        </div>
       </div>
-    </div>
 
-    <p class="text-sm text-slate-400 -mt-1">Sign in to review submitted reports. Brokers don't need an account — the truck list is open. Operator accounts are created by an admin.</p>
+      <p class="text-sm text-slate-500 -mt-1">Sign in to review submitted reports. Brokers don't need an account — the truck list is open. Operator accounts are created by an admin.</p>
 
-    {% if error %}
-      <div class="text-sm text-red-300 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2">Incorrect username or password, or this account can't review.</div>
-    {% endif %}
+      {% if error %}
+        <div class="text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-3 py-2">Incorrect username or password, or this account can't review.</div>
+      {% endif %}
 
-    <label class="text-xs uppercase tracking-wider text-slate-400 -mb-3">Username</label>
-    <input type="text" name="username" autofocus required placeholder="your username" autocomplete="username"
-           class="px-3 py-2.5 rounded-md bg-white/10 border border-white/15 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-400">
+      <label class="text-xs uppercase tracking-wider text-slate-500 -mb-3">Username</label>
+      <input type="text" name="username" autofocus required placeholder="your username" autocomplete="username"
+             class="px-3 py-2.5 rounded-md bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400">
 
-    <label class="text-xs uppercase tracking-wider text-slate-400 -mb-3">Password</label>
-    <input type="password" name="password" required placeholder="••••••••" autocomplete="current-password"
-           class="px-3 py-2.5 rounded-md bg-white/10 border border-white/15 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-400">
-    <button class="bg-amber-500 hover:bg-amber-400 text-ink font-semibold px-3 py-2.5 rounded-md transition-colors">Sign in</button>
-    <a href="/" class="text-xs text-slate-400 text-center hover:text-slate-200 transition-colors">← back to truck list</a>
-  </form>
+      <label class="text-xs uppercase tracking-wider text-slate-500 -mb-3">Password</label>
+      <input type="password" name="password" required placeholder="••••••••" autocomplete="current-password"
+             class="px-3 py-2.5 rounded-md bg-white border border-slate-300 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400">
+      <button class="bg-amber-500 hover:bg-amber-400 text-ink font-semibold px-3 py-2.5 rounded-md transition-colors">Sign in</button>
+      <a href="/" class="text-xs text-slate-400 text-center hover:text-slate-600 transition-colors">← back to truck list</a>
+    </form>
+  </main>
 </body>
 </html>

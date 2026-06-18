@@ -527,7 +527,7 @@ def review_login_form(request: Request, error: Optional[str] = None):
     if _can_review(get_current_user(request)):
         return RedirectResponse("/review", status_code=303)
     return templates.TemplateResponse(request=request, name="login.html",
-                                      context={"error": bool(error)})
+                                      context={"error": bool(error), "hide_signin": True})
 
 
 @app.post("/review/login")
