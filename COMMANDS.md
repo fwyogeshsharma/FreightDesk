@@ -153,9 +153,75 @@ SELECT review_status, count(*) FROM trucks WHERE source='image_api' GROUP BY rev
 
 ---
 
-## 8. Mobile API (for the app developer)
+## 8. Mobile API — curl examples (for testing)
 
-Base URL `http://34.31.185.19:8090`. Full contract in **`API_CONTRACT.md`** and live docs at
-**`/docs`**. Auth endpoints: `POST /api/auth/register`, `POST /api/auth/login`,
-`GET /api/auth/me`, `GET /api/auth/me/reports`, `POST /api/auth/logout`,
-`POST /api/trucks/report`.
+Base URL `http://34.31.185.19:8090`. Full contract in **`API_CONTRACT.md`**, live docs at
+**`/docs`**. The mobile app uses its own HTTP client, but these `curl`s exercise the exact
+same endpoints for testing.
+
+> Run these in **Git Bash** or **on the VM** (single-quoted JSON, `\` line-continuation).
+> In **Windows cmd**: put each on one line and escape inner quotes, e.g.
+> `-d "{\"phone\":\"9811008120\",\"password\":\"secret123\"}"`.
+
+**Register a contributor** (always role `contributor`) → returns `{token, user}`:
+```bash
+curl -i -X POST http://34.31.185.19:8090/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"phone":"9811008120","password":"secret123","display_name":"Ravi"}'
+```
+
+**Login** → returns `{token, user}`:
+```bash
+curl -i -X POST http://34.31.185.19:8090/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"phone":"9811008120","password":"secret123"}'
+```
+
+**Save the token** in a shell variable for the calls below (Git Bash / VM):
+```bash
+TOKEN=$(curl -s -X POST http://34.31.185.19:8090/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"phone":"9811008120","password":"secret123"}' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+echo "$TOKEN"
+```
+(or just copy the `token` value from the login response and use it directly below.)
+
+**Who am I / validate token:**
+```bash
+curl -i -H "Authorization: Bearer $TOKEN" http://34.31.185.19:8090/api/auth/me
+```
+
+**My submissions + reward status:**
+```bash
+curl -i -H "Authorization: Bearer $TOKEN" http://34.31.185.19:8090/api/auth/me/reports
+```
+
+**Submit a truck report — anonymous** (works without login; uses `-F` multipart):
+```bash
+curl -i -F phone_number=9811008120 \
+  -F images=@D:/projects/FreightDesk/test_images/truck.png \
+  http://34.31.185.19:8090/api/trucks/report
+```
+
+**Submit a truck report — logged in** (attributed to the account; up to 5 `images`, plus optional fields):
+```bash
+curl -i -H "Authorization: Bearer $TOKEN" \
+  -F images=@D:/projects/FreightDesk/test_images/truck.png \
+  -F images=@D:/projects/FreightDesk/test_images/truck2.png \
+  -F phone_number=9928001122 \
+  -F vehicle_number=RJ14CA1234 \
+  -F loaded_status=loaded \
+  -F number_of_wheels=12 \
+  -F location="NH-48, Jaipur" \
+  -F latitude=26.9124 -F longitude=75.7873 \
+  http://34.31.185.19:8090/api/trucks/report
+```
+
+**Logout** (revoke the token):
+```bash
+curl -i -X POST -H "Authorization: Bearer $TOKEN" http://34.31.185.19:8090/api/auth/logout
+```
+
+> `@path` uploads a **file**; without `@` curl sends the literal text. In Git Bash use a
+> lowercase drive (`/d/...`) or the `D:/...` form shown above. Report fields: `images`
+> (1–5, required) and `phone_number` (required) are the only musts; the rest are optional.
