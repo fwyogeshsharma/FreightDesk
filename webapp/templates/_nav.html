@@ -1,54 +1,46 @@
-{# Shared operational shell. Params: nav_active ('sightings'|'review'),
-   user ({name, role, can_review} or None), pending_count #}
-<div class="bg-ink text-white">
-  <div class="max-w-[1500px] mx-auto px-5 py-2.5 flex items-center gap-4">
-    <a href="/" class="flex items-center gap-2.5 shrink-0" title="FreightDesk">
-      <span class="grid place-items-center w-9 h-9 rounded-md bg-amber-500 text-ink shadow">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
+{# Shared operational shell — compact, calm, enterprise. Params:
+   nav_active ('sightings'|'review'), user ({name, role, can_review} or None), pending_count #}
+<div class="bg-ink text-white border-b border-white/10">
+  <div class="max-w-[1500px] mx-auto px-5 h-12 flex items-center gap-3 sm:gap-5">
+    <a href="/" class="flex items-center gap-2 shrink-0" title="FreightDesk">
+      <span class="grid place-items-center w-6 h-6 rounded bg-amber-500 text-ink">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 17h4V5H2v12h3"/><path d="M20 17h2v-3.34a4 4 0 0 0-1.17-2.83L19 9h-5v8h1"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
       </span>
-      <span class="font-bold tracking-tight text-[16px] hidden sm:block">FreightDesk</span>
+      <span class="font-semibold tracking-tight text-[15px] hidden sm:block">FreightDesk</span>
     </a>
 
-    {% set tab = "px-3 py-1.5 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2" %}
+    {% set tab = "px-2.5 py-1 rounded-md text-[13px] font-medium transition-colors inline-flex items-center gap-1.5 whitespace-nowrap" %}
     {% set on = "bg-white/15 text-white" %}
-    {% set off = "text-slate-300 hover:text-white hover:bg-white/10" %}
-    <nav class="flex items-center gap-1 ml-1 sm:ml-3">
+    {% set off = "text-slate-400 hover:text-white hover:bg-white/10" %}
+    <nav class="flex items-center gap-0.5">
       <a href="/" class="{{ tab }} {{ on if nav_active=='sightings' else off }}">Truck Sightings</a>
       {% if user and user.can_review %}
         <a href="/review" class="{{ tab }} {{ on if nav_active=='review' else off }}">
           Review Queue
           {% if pending_count and pending_count > 0 %}
-            <span class="text-[11px] font-semibold bg-amber-500 text-ink rounded-full px-1.5 min-w-[18px] text-center" title="{{ pending_count }} awaiting review">{{ pending_count }}</span>
+            <span class="text-[10px] font-semibold bg-amber-500 text-ink rounded-full px-1.5 min-w-[16px] text-center" title="{{ pending_count }} awaiting review">{{ pending_count }}</span>
           {% endif %}
         </a>
       {% else %}
         <a href="/review/login" class="{{ tab }} {{ off }}" title="For reviewers — sign in to validate submitted reports">
-          Review Queue
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="opacity-70"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <span class="hidden sm:inline">Review Queue</span><span class="sm:hidden">Queue</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" class="opacity-50"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
         </a>
       {% endif %}
     </nav>
 
-    <div class="ml-auto flex items-center gap-3 text-sm">
+    <div class="ml-auto flex items-center gap-2.5 text-[13px]">
       {% if user and user.can_review %}
         <span class="text-slate-400 hidden sm:inline-flex items-center gap-1.5">
-          👤 {{ user.name }}
-          <span class="text-[10px] uppercase tracking-wider bg-white/10 text-slate-300 rounded px-1.5 py-0.5">{{ user.role }}</span>
+          {{ user.name }}
+          <span class="text-[10px] uppercase tracking-wide bg-white/10 text-slate-400 rounded px-1 py-0.5">{{ user.role }}</span>
         </span>
-        <a href="/review/logout" class="text-slate-300 hover:text-white border border-white/15 hover:border-white/40 rounded-md px-3 py-1.5 transition-colors">Logout</a>
+        <a href="/review/logout" class="text-slate-400 hover:text-white transition-colors">Sign out</a>
       {% else %}
-        <a href="/review/login" class="text-slate-100 hover:text-white border border-white/20 hover:border-white/50 rounded-md px-3 py-1.5 transition-colors">Reviewer Sign-in</a>
+        <a href="/review/login" class="text-slate-300 hover:text-white border border-white/15 hover:border-white/40 rounded-md px-2.5 py-1 transition-colors whitespace-nowrap">
+          <span class="hidden sm:inline">Reviewer Sign-in</span><span class="sm:hidden">Sign in</span>
+        </a>
       {% endif %}
     </div>
   </div>
-  <div class="accent-rule h-[3px]"></div>
 </div>
-
-{% if page_title %}
-<div class="bg-white">
-  <div class="max-w-[1500px] mx-auto px-5 pt-2.5 pb-1.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-    <span class="font-semibold text-[15px] text-slate-800">{{ page_title }}</span>
-    {% if page_subtitle %}<span class="text-sm text-slate-500">— {{ page_subtitle }}</span>{% endif %}
-  </div>
-</div>
-{% endif %}

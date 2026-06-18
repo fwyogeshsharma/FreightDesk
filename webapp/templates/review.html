@@ -28,13 +28,11 @@
 
   <header class="sticky top-0 z-20 shadow-sm">
     {% set nav_active = 'review' %}
-    {% set page_title = 'Review Queue' %}
-    {% set page_subtitle = 'Telecaller workspace for validating submitted reports.' %}
     {% include "_nav.html" %}
 
     <!-- review filters row -->
     <div class="bg-white border-b border-slate-200">
-      <div class="max-w-[1500px] mx-auto px-5 py-2.5 flex flex-wrap items-center gap-2 text-sm">
+      <div class="max-w-[1500px] mx-auto px-5 py-2 flex flex-wrap items-center gap-2 text-sm">
         <span class="tnum text-slate-600 font-medium mr-1">{{ total }} in view</span>
         {% set rchip = "px-2.5 py-1.5 rounded-full border border-slate-300 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-400 hover:border-slate-400" %}
         <form method="get" action="/review" class="flex flex-wrap items-center gap-2">
