@@ -11,6 +11,7 @@ pgdata/
 videos/
 output/
 test_images/
+uploads/
 
 # ── Logs ─────────────────────────────────────────────────
 *.log

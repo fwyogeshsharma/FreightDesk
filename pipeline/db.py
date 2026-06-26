@@ -88,6 +88,18 @@ class Truck(Base):
     reviewed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     review_note: Mapped[Optional[str]] = mapped_column(String(500))
 
+    # ── Async processing lifecycle (source = image_api) ──────────────────────────
+    # The mobile API accepts the report and returns immediately; OCR runs in a
+    # background worker. `processing_status` is the job state the app polls. It is a
+    # THIRD, independent dimension — distinct from verification_status (machine trust)
+    # and review_status (human decision). NULL for video/stream (processed inline).
+    processing_status: Mapped[Optional[str]] = mapped_column(String(16), index=True)  # QUEUED/PROCESSING/DONE/FAILED
+    processing_error: Mapped[Optional[str]] = mapped_column(String(500))
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    # Storage keys for the uploaded photos, retained up to 2 days then auto-deleted
+    # (photos are not permanent — only the extracted text is). NULL once purged.
+    image_keys: Mapped[Optional[list]] = mapped_column(JSONB)
+
     # Full audit data for the detail view.
     plate_candidates: Mapped[Optional[dict]] = mapped_column(JSONB)
     body_texts: Mapped[Optional[list]] = mapped_column(JSONB)
@@ -135,6 +147,10 @@ class Truck(Base):
             "reviewed_by_user_id": self.reviewed_by_user_id,
             "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "review_note": self.review_note,
+            "processing_status": self.processing_status,
+            "processing_error": self.processing_error,
+            "processed_at": self.processed_at.isoformat() if self.processed_at else None,
+            "image_keys": self.image_keys,
             "plate_candidates": self.plate_candidates,
             "body_texts": self.body_texts,
             "image_path": self.image_path,

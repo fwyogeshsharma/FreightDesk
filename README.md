@@ -13,7 +13,7 @@ console so they can call drivers and arrange loads.
 |---|---|---|
 | **Video files** | Road‑camera MP4s → YOLOv8 vehicle gate → EasyOCR → stored **only if a phone number is found** | Auto Verified |
 | **Live stream** | RTSP/HTTP camera → same detect → OCR chain (wall‑clock timestamps) | Auto Verified |
-| **Mobile field reports** | `POST /api/trucks/report` — on‑road users submit ≤5 photos + form fields; images are **processed, never stored** | Telecaller review: Pending → Passed / Rejected |
+| **Mobile field reports** | `POST /api/trucks/report` — on‑road users submit ≤5 photos + form fields; **async** (returns `202`, OCR'd in the background, app polls for status); photos kept ≤2 days then auto‑deleted | Telecaller review: Pending → Passed / Rejected |
 
 **Two operational web consoles (one shared shell):**
 - **Truck Sightings** (`/`) — broker workspace: search anything, filter, sort, newest‑first, one‑tap **click‑to‑call**.

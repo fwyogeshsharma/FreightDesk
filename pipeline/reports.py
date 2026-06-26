@@ -28,6 +28,48 @@ def _norm_plate(s: str) -> str:
     return _ALNUM.sub('', (s or '').upper())
 
 
+def _plate_fragments(ocr: dict) -> list:
+    """Normalized alnum OCR tokens that could be the plate, or one line of it.
+    Body-text tokens must contain a digit to qualify, so plain company words aren't
+    spuriously concatenated into a 'plate'. (Plate lines always carry digits.)"""
+    frags, seen = [], set()
+
+    def add(s, require_digit=False):
+        n = _norm_plate(s)
+        if not (2 <= len(n) <= 12):
+            return
+        if require_digit and not any(c.isdigit() for c in n):
+            return
+        if n not in seen:
+            seen.add(n)
+            frags.append(n)
+
+    add(ocr.get("license_plate") or "")               # dedicated plate-detector read
+    for k in (ocr.get("plate_candidates") or {}):       # all plate candidates
+        add(k)
+    for t in (ocr.get("body_texts") or []):             # body OCR (digit-bearing only)
+        add(t, require_digit=True)
+    return frags
+
+
+def _match_reported_plate(n_rep: str, ocr: dict, max_dist: int):
+    """Confirm a typed plate against the OCR fragments, **reassembling split plates**
+    (Indian plates are often painted on two lines, so OCR yields 'OR02' and 'AS3344'
+    separately — neither matches alone, but joined they do). Returns the matched OCR
+    string, or None if nothing is within max_dist."""
+    frags = _plate_fragments(ocr)
+    if not n_rep or not frags:
+        return None
+    candidates = set(frags)
+    for a in frags:                       # reassemble two-line plates: ordered pairs
+        for b in frags:
+            if a != b:
+                candidates.add(a + b)
+    candidates.add("".join(frags))        # and all fragments joined, in read order
+    best = min(candidates, key=lambda c: _levenshtein(n_rep, c))
+    return best if _levenshtein(n_rep, best) <= max_dist else None
+
+
 def _clean_phone(s: str) -> str:
     """Canonical 10-digit Indian mobile, or '' if it isn't one."""
     got = _extract_phones([s or ''])
@@ -61,18 +103,23 @@ def reconcile(reported: dict, ocr: dict, config) -> dict:
     # (not auto-trusted/paid) with a reason logged for abuse review.
     reported_vn = (reported.get("vehicle_number") or "").strip()
     ocr_plate = (ocr.get("license_plate") or "").strip()
-    n_rep, n_ocr = _norm_plate(reported_vn), _norm_plate(ocr_plate)
+    n_rep = _norm_plate(reported_vn)
 
-    if n_rep and n_ocr:
-        if _levenshtein(n_rep, n_ocr) <= config.plate_match_distance:
-            verification_status, plate_status = "VERIFIED", "VERIFIED"
-            reason = "vehicle number confirmed from photos"
-            license_plate = reported_vn
-        else:
-            verification_status, plate_status = "UNVERIFIED", "MISMATCH"
-            reason = (f"plate mismatch: reported '{reported_vn}', "
-                      f"photos read '{ocr_plate}'")
-            license_plate = reported_vn  # keep the claim; it's just unconfirmed
+    # Confirm the typed plate against ALL plate signals OCR found (plate detector +
+    # candidates + digit-bearing body text), reassembling two-line plates.
+    matched = _match_reported_plate(n_rep, ocr, config.plate_match_distance) if n_rep else None
+    ocr_has_plate_text = bool(_plate_fragments(ocr))
+
+    if n_rep and matched:
+        verification_status, plate_status = "VERIFIED", "VERIFIED"
+        reason = "vehicle number confirmed from photos"
+        license_plate = reported_vn
+    elif n_rep and ocr_has_plate_text:
+        verification_status, plate_status = "UNVERIFIED", "MISMATCH"
+        read = ocr_plate or '/'.join(_plate_fragments(ocr)[:3])
+        reason = (f"plate mismatch: reported '{reported_vn}', "
+                  f"photos read '{read}'")
+        license_plate = reported_vn  # keep the claim; it's just unconfirmed
     elif reported_vn:
         verification_status, plate_status = "UNVERIFIED", "REPORTED"
         reason = "no plate readable in the photos to confirm the vehicle number"

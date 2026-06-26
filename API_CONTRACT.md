@@ -8,8 +8,13 @@ Submit one truck sighting (1–5 photos + details) → creates one record.
 - **Auth:** optional. If the user is logged in, send `Authorization: Bearer <token>` and
   the report is attributed to that account; without it the submission is anonymous
   (still accepted). See **Authentication** below.
-- **Important:** the photos are processed (OCR) and then **discarded** — images are
-  never stored. We keep only the extracted data.
+- **Important — this is ASYNCHRONOUS.** The endpoint validates + accepts the report and
+  returns **`202 Accepted` immediately** with a record `id`; OCR runs in the background. The
+  app must then **poll `GET /api/trucks/{id}`** until `processing_status` is `DONE` (or
+  `FAILED`) to get the OCR result. See **Polling for the result** below. *(This replaced the
+  old behavior where the POST blocked until OCR finished and returned the full result.)*
+- Photos are kept in temporary storage for up to ~2 days (for OCR + telecaller review), then
+  auto-deleted. Only the extracted data is permanent.
 
 ---
 
@@ -86,115 +91,115 @@ curl -X POST http://localhost:8000/api/trucks/report \
 
 ---
 
-## Success response — `200 OK`
+## Success response — `202 Accepted`
+
+The report is **accepted immediately** — OCR has *not* run yet, so the body is small:
 
 ```json
 {
-  "truck": {
-    "id": 124,
-    "detected_at": "2026-06-16T14:31:07.512000+05:30",
-    "source": "image_api",
-    "source_ref": "driver_app_9087",
-    "license_plate": "RJ14CA1234",
-    "plate_confidence": "VERIFIED",
-    "company_name": "SHREE BALAJI TRANSPORT",
-    "phone_number": "9811008120",
-    "website": null,
-    "vehicle_type": "TRUCK",
-    "city": "Jaipur",
-    "other_text": "GOODS CARRIER",
-    "frames": 3,
-    "first_seen_sec": 0.0,
-    "last_seen_sec": 2.0,
-    "loaded_status": "LOADED",
-    "location": "NH-48, Jaipur",
-    "latitude": 26.9124,
-    "longitude": 75.7873,
-    "num_wheels": 12,
-    "phone_reported": "9811008120",
-    "phone_ocr": "9811008120",
-    "reported_by": "Ravi",
-    "reported_by_user_id": 42,
-    "reporter_phone": "9811008120",
-    "verification_status": "VERIFIED",
-    "review_status": "PENDING",
-    "reviewed_by": null,
-    "reviewed_by_user_id": null,
-    "reviewed_at": null,
-    "review_note": null,
-    "plate_candidates": { "RJ14CA1234": 3 },
-    "body_texts": ["GOODS CARRIER", "SHREE BALAJI TRANSPORT", "9811008120"],
-    "image_path": null,
-    "created_at": "2026-06-16T14:31:07.611000+05:30"
-  },
-  "images_processed": 3,
-  "verification_status": "VERIFIED",
+  "id": 124,
+  "processing_status": "QUEUED",
   "review_status": "PENDING",
-  "reason": "vehicle number confirmed from photos",
-  "plate_status": "VERIFIED",
-  "phone_status": "MATCH",
-  "reported_by_user_id": 42
+  "images_accepted": 3,
+  "status_url": "/api/trucks/124",
+  "message": "Report accepted; OCR is running in the background."
 }
 ```
 
-### Top-level fields the app should read
 | Field | Meaning |
 |---|---|
-| `truck.id` | The stored record id. Use it to poll status later (see below). |
-| `verification_status` | `VERIFIED` if the photos confirmed the typed vehicle number; else `UNVERIFIED`. |
-| `review_status` | Always `PENDING` right after submit (a telecaller reviews it next). |
-| `reason` | Human-readable explanation of the verification result. |
-| `phone_status` | `MATCH` / `MERGED` / `REPORTED_ONLY` — how the typed phone compared to OCR. |
-| `images_processed` | How many of the uploaded images were readable. |
-| `reported_by_user_id` | The logged-in contributor's id when a bearer token was sent; `null` for anonymous submissions. |
+| `id` | The stored record id. Poll `GET /api/trucks/{id}` (= `status_url`) for the result. |
+| `processing_status` | `QUEUED` right after submit → becomes `PROCESSING` → `DONE` (or `FAILED`). |
+| `review_status` | Always `PENDING` right after submit (a telecaller reviews it once processed). |
+| `images_accepted` | How many uploaded images were decodable and stored. |
+| `status_url` | Convenience path to poll for the result. |
 
-> **Note:** Submission always succeeds with `200` even when `verification_status` is
-> `UNVERIFIED` — the record is still stored and a telecaller will review it. A truck
-> is only **reward-eligible after** a telecaller sets `review_status` to `PASSED`.
+---
 
-### UNVERIFIED example (photos couldn't confirm the plate)
+## Polling for the result
+
+After `202`, poll **`GET /api/trucks/{id}`** every few seconds. It returns the full `truck`
+record; watch **`processing_status`**:
+
+| `processing_status` | Meaning | App should… |
+|---|---|---|
+| `QUEUED` / `PROCESSING` | OCR not finished yet | show "Processing…", poll again in ~3 s |
+| `DONE` | OCR finished — read `verification_status`, `license_plate`, `company_name`, … | stop processing-poll; show result |
+| `FAILED` | Photos unreadable/expired or an error (`processing_error`) | ask the user to resubmit |
+
+> On a small server OCR can take a while (seconds to a minute under load). Suggested client:
+> poll every ~3 s, and after ~60 s show "still processing — we'll update it shortly" rather
+> than blocking the user. The record is safely stored the whole time.
+
+Once `processing_status == "DONE"`, the same record carries the OCR result (full shape is the
+`GET /api/trucks/{id}` object):
+
 ```json
 {
-  "truck": { "id": 125, "verification_status": "UNVERIFIED", "review_status": "PENDING", "...": "..." },
-  "images_processed": 2,
-  "verification_status": "UNVERIFIED",
+  "id": 124,
+  "processing_status": "DONE",
+  "processed_at": "2026-06-16T14:31:10.001000+05:30",
+  "verification_status": "VERIFIED",
   "review_status": "PENDING",
-  "reason": "no plate readable in the photos to confirm the vehicle number",
-  "plate_status": "REPORTED",
-  "phone_status": "REPORTED_ONLY"
+  "license_plate": "RJ14CA1234",
+  "company_name": "SHREE BALAJI TRANSPORT",
+  "phone_number": "9811008120",
+  "vehicle_type": "TRUCK",
+  "city": "Jaipur",
+  "body_texts": ["GOODS CARRIER", "SHREE BALAJI TRANSPORT", "9811008120"],
+  "reported_by_user_id": 42,
+  "...": "(plus all the other truck fields)"
 }
 ```
+
+| Field on the DONE record | Meaning |
+|---|---|
+| `verification_status` | `VERIFIED` if the photos confirmed the typed `vehicle_number`; else `UNVERIFIED`. |
+| `review_status` | `PENDING` until a telecaller decides; **`PASSED` = reward-eligible**; `REJECTED` = not. |
+| `processing_error` | Why it `FAILED` (only set on failure). |
+
+> A report can be `DONE` + `UNVERIFIED` + `PENDING` all at once — those are three independent
+> things (did OCR finish · did photos confirm the plate · has a human approved it). A truck is
+> only **reward-eligible after** a telecaller sets `review_status` to `PASSED`.
 
 ---
 
 ## Error responses
+
+Validation still happens **synchronously** on the POST (before the `202`), so these return right away:
 
 | Status | When | Body |
 |---|---|---|
 | `400 Bad Request` | `phone_number` blank, more than 5 images, or no image was decodable | `{ "detail": "phone_number is required" }` (message varies) |
 | `422 Unprocessable Entity` | A required field is missing entirely (`images` or `phone_number` not sent) | `{ "detail": [ { "loc": ["body","phone_number"], "msg": "field required", ... } ] }` |
 
+A photo that fails OCR *after* acceptance does **not** error the request — the record is stored
+and ends up `processing_status: FAILED` (if no image was usable) or `DONE` + `UNVERIFIED`.
+
 ---
 
-## Checking status later (reward flow)
+## The two polls (don't confuse them)
 
-A submission starts as `review_status: "PENDING"`. A telecaller calls the number to
-confirm, then marks it `PASSED` (reward-eligible) or `REJECTED`. The app can poll:
+The app polls the **same** `GET /api/trucks/{id}` for two different milestones:
 
-- **`GET /api/trucks/{id}`** → returns the same `truck` object; read `review_status`
-  to know when it becomes `PASSED`.
+1. **Processing** (seconds): `processing_status` `QUEUED→PROCESSING→DONE`. Poll tightly right
+   after submit; stop once `DONE`/`FAILED`.
+2. **Reward review** (minutes–hours, human): after `DONE`, a telecaller calls the number and
+   sets `review_status` to `PASSED` (reward-eligible) or `REJECTED`. Poll occasionally — or just
+   use **`GET /api/auth/me/reports`** (bearer), which lists the user's reports + a
+   `{pending, passed, rejected}` summary for the reward screen.
 
 ```bash
-curl http://localhost:8000/api/trucks/124
+curl http://localhost:8000/api/trucks/124        # read processing_status, then review_status
 ```
 
 ---
 
 ## Tips for the mobile dev
 - Send each photo as a separate `images` part (don't zip or base64 them).
-- Prefer logging the user in and sending `Authorization: Bearer <token>` so rewards
-  attribute to the right account (replaces the old free-text `reported_by`).
-- Treat `200` as "received & stored"; show the user "Pending review" until a later
-  `GET` shows `review_status: PASSED`.
+- Treat `202` as "received & queued" — immediately move the user off the upload screen; don't
+  block on a response. Then poll `status_url` for `processing_status`.
+- Prefer logging the user in and sending `Authorization: Bearer <token>` so rewards attribute
+  to the right account (replaces the old free-text `reported_by`).
 - Interactive, always-up-to-date API docs are served at **`/docs`** (Swagger UI) and
   **`/redoc`** — e.g. `http://localhost:8000/docs`.

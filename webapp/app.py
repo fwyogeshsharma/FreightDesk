@@ -36,7 +36,6 @@ from pydantic import BaseModel
 from sqlalchemy import distinct, func, or_, select
 
 from pipeline import auth
-from pipeline.config import Config
 from pipeline.db import SourceType, Truck, User, get_session_factory, init_db
 
 _HERE = Path(__file__).parent
@@ -80,32 +79,11 @@ def _startup():
         with Session() as s:
             auth.ensure_seed_admin(s)
             s.commit()
+        # Start the background OCR worker and recover any unfinished report jobs.
+        from webapp import processing
+        processing.start_worker()
     except Exception as e:  # pragma: no cover - surfaced in logs
-        print(f"[webapp] WARNING: could not reach the database: {e}")
-
-
-# ── Lazy model bundle (only built when the image API is first hit) ───────────────
-
-class _Models:
-    def __init__(self):
-        self.ready = False
-
-    def load(self):
-        if self.ready:
-            return
-        from pipeline.detector import Detector, PlateDetector
-        from pipeline.ocr_engine import build_ocr_engine, FrameOCR
-        cfg = Config()
-        # Phone photos can be a touch soft — don't let the frame-blur gate zero them.
-        cfg.blur_variance_threshold = 0.0
-        self.detector = Detector(cfg)
-        pd = PlateDetector()
-        self.plate_detector = pd if pd.available() else None
-        self.frame_ocr = FrameOCR(cfg, build_ocr_engine(cfg))
-        self.ready = True
-
-
-_models = _Models()
+        print(f"[webapp] WARNING: startup issue: {e}")
 
 
 # ── Auth: unified user accounts (mobile bearer + web cookie) ─────────────────────
@@ -313,19 +291,25 @@ async def report(
     captured_at: Optional[str] = Form(None),
     reported_by: Optional[str] = Form(None),
 ):
-    """Mobile app submission: 1-5 photos of ONE truck + form fields -> one DB row.
+    """Mobile app submission: 1-5 photos of ONE truck + form fields.
 
-    Photos are OCR'd (never stored). Contributors are anonymous/paid, so the row is
-    VERIFIED only when the photos confirm the typed vehicle number; otherwise it's
-    stored UNVERIFIED with a reason. Every submission is logged (submission_log) for
-    abuse review. The phone is merged with any OCR-read phone.
+    ASYNC: the photos are stored and the report is accepted immediately (HTTP 202,
+    processing_status=QUEUED). A background worker then OCRs the photos, reconciles
+    them against the typed fields, and updates the row. The app polls
+    GET /api/trucks/{id} until processing_status is DONE or FAILED.
+
+    Photos are retained at most ~2 days (for OCR + telecaller review), then deleted —
+    only the extracted text in the row is permanent. Contributors are anonymous/paid,
+    so a row becomes VERIFIED only when the photos confirm the typed vehicle number;
+    otherwise it stays UNVERIFIED with a reason. Every submission is logged
+    (submission_log) for abuse review.
     """
     import cv2
     import numpy as np
-    from pipeline.image_api import build_event_from_images, MAX_IMAGES
-    from pipeline.extract import extract_truck_fields
-    from pipeline.reports import reconcile
-    from pipeline.db_writer import insert_report
+    from pipeline.image_api import MAX_IMAGES
+    from pipeline.storage import get_storage
+    from pipeline import db_writer
+    from webapp import processing
 
     if not phone_number or not phone_number.strip():
         raise HTTPException(400, "phone_number is required")
@@ -334,21 +318,20 @@ async def report(
     if len(images) > MAX_IMAGES:
         raise HTTPException(400, f"At most {MAX_IMAGES} photos per truck")
 
-    decoded = []
+    # Read + validate the uploads now (decoding is cheap; only the OCR is deferred).
+    _ALLOWED_EXT = (".jpg", ".jpeg", ".png", ".webp", ".bmp")
+    uploads = []  # (bytes, ext, content_type)
     for up in images:
         data = await up.read()
         arr = np.frombuffer(data, dtype=np.uint8)
-        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-        if img is not None:
-            decoded.append(img)
-    if not decoded:
+        if cv2.imdecode(arr, cv2.IMREAD_COLOR) is None:
+            continue  # skip anything that isn't a decodable image
+        ext = Path(up.filename or "").suffix.lower()
+        if ext not in _ALLOWED_EXT:
+            ext = ".jpg"
+        uploads.append((data, ext, up.content_type or "image/jpeg"))
+    if not uploads:
         raise HTTPException(400, "None of the uploads could be decoded as images")
-
-    _models.load()
-    # Build the OCR view of the truck — images are processed, never saved.
-    event = build_event_from_images(decoded, _models.detector, _models.plate_detector,
-                                    _models.frame_ocr, capture_crop=False)
-    ocr = extract_truck_fields(event) or {}
 
     reported = {
         "vehicle_number": vehicle_number, "phone_number": phone_number,
@@ -356,27 +339,35 @@ async def report(
         "location": location, "latitude": latitude, "longitude": longitude,
         "captured_at": captured_at, "reported_by": reported_by,
     }
-    # Transition mode: if the contributor is logged in (bearer/cookie), attribute the
-    # report to that account and snapshot their name/phone; otherwise keep today's
-    # anonymous behavior (free-text reported_by from the form). No hard auth required.
+    # If the contributor is logged in (bearer/cookie), attribute the report to that
+    # account; otherwise keep the anonymous free-text reported_by. No hard auth needed.
     user = get_current_user(request)
     if user:
         reported["reported_by"] = _display_name(user)
         reported["reported_by_user_id"] = user.id
         reported["reporter_phone"] = user.phone
 
-    # Always stored; the photos decide whether it's VERIFIED or UNVERIFIED.
-    fields = reconcile(reported, ocr, Config())
-    row = insert_report(fields, images_count=len(decoded))
-    return JSONResponse({
-        "truck": row,
-        "images_processed": len(decoded),
-        "verification_status": fields["verification_status"],
-        "review_status": row.get("review_status"),  # PENDING until a telecaller reviews
-        "reason": fields["reason"],
-        "plate_status": fields["plate_status"],
-        "phone_status": fields["phone_status"],
-        "reported_by_user_id": row.get("reported_by_user_id"),
+    # 1) Insert the QUEUED row from the typed fields (instant — no OCR here).
+    row = db_writer.insert_pending_report(reported, images_count=len(uploads))
+    truck_id = row["id"]
+    # 2) Persist the photos (≤2-day retention), then attach their storage keys.
+    storage = get_storage()
+    keys = []
+    for idx, (data, ext, ctype) in enumerate(uploads):
+        key = f"reports/{truck_id}/{idx}{ext}"
+        storage.put(key, data, content_type=ctype)
+        keys.append(key)
+    db_writer.set_image_keys(truck_id, keys)
+    # 3) Hand off to the background worker and return immediately.
+    processing.enqueue(truck_id)
+
+    return JSONResponse(status_code=202, content={
+        "id": truck_id,
+        "processing_status": "QUEUED",   # poll status_url until DONE / FAILED
+        "review_status": "PENDING",      # a telecaller reviews once processed
+        "images_accepted": len(uploads),
+        "status_url": f"/api/trucks/{truck_id}",
+        "message": "Report accepted; OCR is running in the background.",
     })
 
 
@@ -519,6 +510,27 @@ def patch_truck(truck_id: int, body: ReviewPatch,
         row.review_note = (body.review_note or "").strip() or None
         s.commit()
         return JSONResponse(row.as_dict())
+
+
+@app.get("/trucks/{truck_id}/image/{idx}")
+def truck_image(truck_id: int, idx: int, reviewer: Reviewer = Depends(require_reviewer)):
+    """Stream a stored report photo (reviewer-only) so telecallers can eyeball the
+    upload during review. Available only within the ~2-day retention window — returns
+    404 once the photo has been auto-deleted."""
+    import mimetypes
+    from fastapi.responses import Response
+    from pipeline.storage import get_storage
+    Session = get_session_factory()
+    with Session() as s:
+        row = s.get(Truck, truck_id)
+        keys = (row.image_keys or []) if row else []
+        if not row or idx < 0 or idx >= len(keys):
+            raise HTTPException(404, "image not found")
+        key = keys[idx]
+    data = get_storage().get(key)
+    if data is None:
+        raise HTTPException(404, "image expired or unavailable")
+    return Response(content=data, media_type=mimetypes.guess_type(key)[0] or "image/jpeg")
 
 
 @app.get("/review/login", response_class=HTMLResponse)

@@ -6,12 +6,14 @@ concurrent writers, so in parallel mode each worker owns its own `TruckDBWriter`
 and inserts directly — no parent queue needed.
 """
 import logging
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from .db import SourceType, SubmissionLog, Truck, get_session_factory
 from .extract import extract_truck_fields
+from .reports import _parse_dt
 from .timestamps import detected_at as _detected_at
 
 log = logging.getLogger(__name__)
@@ -54,6 +56,155 @@ def insert_report(fields: dict, images_count: int = None, session_factory=None) 
         ))
         s.commit()
         return truck.as_dict()
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
+
+
+# ── Async mobile-report flow (accept now, OCR in a background worker) ─────────────
+# /report inserts a QUEUED row from the user-typed fields, stores the photos, and
+# returns immediately. A worker later OCRs the photos and calls finalize_report (or
+# fail_report). detected_at is stamped once, at submission time — never moved to the
+# (later) processing time.
+_FINALIZE_COLUMNS = tuple(c for c in _REPORT_COLUMNS if c != "detected_at")
+
+
+def insert_pending_report(reported: dict, images_count: int = None,
+                          session_factory=None) -> dict:
+    """Insert a QUEUED report row from the user-typed fields only (no OCR yet) and
+    return it as_dict(). The photos are OCR'd later by the background worker."""
+    Session = session_factory or get_session_factory()
+    vehicle = (reported.get("vehicle_number") or "").strip() or None
+    phone_digits = re.sub(r"\D", "", reported.get("phone_number") or "") or None
+    loaded = (reported.get("loaded_status") or "").strip().upper()
+    truck = Truck(
+        source=SourceType.image_api,
+        detected_at=_parse_dt(reported.get("captured_at")),
+        source_ref=(reported.get("reported_by") or "mobile_report"),
+        license_plate=vehicle,
+        phone_number=phone_digits,
+        phone_reported=phone_digits,
+        loaded_status=loaded if loaded in ("LOADED", "UNLOADED") else None,
+        location=(reported.get("location") or "").strip() or None,
+        latitude=reported.get("latitude"),
+        longitude=reported.get("longitude"),
+        num_wheels=reported.get("number_of_wheels"),
+        reported_by=(reported.get("reported_by") or "").strip() or None,
+        reported_by_user_id=reported.get("reported_by_user_id"),
+        reporter_phone=(reported.get("reporter_phone") or "").strip() or None,
+        processing_status="QUEUED",
+        review_status="PENDING",         # awaits a telecaller once processed
+    )
+    s = Session()
+    try:
+        s.add(truck)
+        s.commit()
+        return truck.as_dict()
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
+
+
+def set_image_keys(truck_id: int, keys: list, session_factory=None) -> None:
+    """Record the storage keys for a report's uploaded photos."""
+    Session = session_factory or get_session_factory()
+    s = Session()
+    try:
+        row = s.get(Truck, truck_id)
+        if row is not None:
+            row.image_keys = keys or None
+            s.commit()
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
+
+
+def reported_from_row(row) -> dict:
+    """Reconstruct the user-typed report dict from a stored row, so the worker can
+    reconcile it against the OCR output (photos are not re-uploaded by the client)."""
+    return {
+        "vehicle_number": row.license_plate,
+        "phone_number": row.phone_reported or row.phone_number,
+        "loaded_status": row.loaded_status,
+        "number_of_wheels": row.num_wheels,
+        "location": row.location,
+        "latitude": row.latitude,
+        "longitude": row.longitude,
+        "captured_at": row.detected_at.isoformat() if row.detected_at else None,
+        "reported_by": row.reported_by,
+        "reported_by_user_id": row.reported_by_user_id,
+        "reporter_phone": row.reporter_phone,
+    }
+
+
+def finalize_report(truck_id: int, fields: dict, images_count: int = None,
+                    session_factory=None) -> dict:
+    """Apply OCR results (reconciled `fields`) to a QUEUED row, mark it DONE, and
+    write its submission_log audit row. Returns the updated row as_dict()."""
+    Session = session_factory or get_session_factory()
+    s = Session()
+    try:
+        row = s.get(Truck, truck_id)
+        if row is None:
+            return {}
+        for col in _FINALIZE_COLUMNS:
+            setattr(row, col, fields.get(col))
+        row.processing_status = "DONE"
+        row.processing_error = None
+        row.processed_at = datetime.now()
+        s.add(SubmissionLog(
+            reported_by=fields.get("reported_by"),
+            reported_by_user_id=fields.get("reported_by_user_id"),
+            reporter_phone=fields.get("reporter_phone"),
+            status=fields.get("verification_status"),
+            reason=fields.get("reason"),
+            vehicle_reported=fields.get("vehicle_reported"),
+            vehicle_ocr=fields.get("vehicle_ocr"),
+            phone_reported=fields.get("phone_reported"),
+            phone_ocr=fields.get("phone_ocr"),
+            images_count=images_count,
+            truck_id=row.id,
+        ))
+        s.commit()
+        return row.as_dict()
+    except Exception:
+        s.rollback()
+        raise
+    finally:
+        s.close()
+
+
+def fail_report(truck_id: int, error: str, images_count: int = None,
+                session_factory=None) -> dict:
+    """Mark a report FAILED (images unreadable/expired, or an OCR crash) and log it."""
+    Session = session_factory or get_session_factory()
+    s = Session()
+    try:
+        row = s.get(Truck, truck_id)
+        if row is None:
+            return {}
+        row.processing_status = "FAILED"
+        row.processing_error = (error or "")[:500]
+        row.processed_at = datetime.now()
+        s.add(SubmissionLog(
+            reported_by=row.reported_by,
+            reported_by_user_id=row.reported_by_user_id,
+            reporter_phone=row.reporter_phone,
+            status="FAILED",
+            reason=(error or "")[:255],
+            vehicle_reported=row.license_plate,
+            phone_reported=row.phone_reported,
+            images_count=images_count,
+            truck_id=row.id,
+        ))
+        s.commit()
+        return row.as_dict()
     except Exception:
         s.rollback()
         raise

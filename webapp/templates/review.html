@@ -74,18 +74,33 @@
               {% for t in reports %}
               <tr id="row-{{ t.id }}" class="even:bg-slate-50/40 align-top"
                   style="animation-delay: {{ '%.3f'|format(loop.index0 * 0.022) }}s">
-                <!-- Vehicle + verification -->
+                <!-- Vehicle + verification + photo -->
                 <td class="px-3 py-2 whitespace-nowrap">
-                  <div class="flex items-center gap-2">
-                    <span class="font-mono font-semibold tracking-wide text-slate-900">{{ t.license_plate or '—' }}</span>
-                    {% if t.verification_status=='VERIFIED' %}
-                      <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">✓ Verified</span>
-                    {% else %}
-                      <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">⚠ Unverified</span>
+                  <div class="flex items-start gap-2">
+                    {% if t.image_keys %}
+                      <a href="/trucks/{{ t.id }}/image/0" target="_blank" title="View uploaded photo (kept ~2 days)">
+                        <img src="/trucks/{{ t.id }}/image/0" alt="" loading="lazy"
+                             class="w-12 h-12 object-cover rounded-md border border-slate-200 bg-slate-100 hover:ring-2 hover:ring-amber-400"
+                             onerror="this.closest('a').style.display='none'">
+                      </a>
                     {% endif %}
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <span class="font-mono font-semibold tracking-wide text-slate-900">{{ t.license_plate or '—' }}</span>
+                        {% if t.processing_status in ('QUEUED','PROCESSING') %}
+                          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200">⏳ Processing</span>
+                        {% elif t.processing_status=='FAILED' %}
+                          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200" title="{{ t.processing_error }}">⚠ Failed</span>
+                        {% elif t.verification_status=='VERIFIED' %}
+                          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">✓ Verified</span>
+                        {% else %}
+                          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">⚠ Unverified</span>
+                        {% endif %}
+                      </div>
+                      <div class="text-[11px] text-slate-400 max-w-[16rem] truncate" title="{{ t.reason }}">{{ t.reason or '' }}</div>
+                      <div class="text-[11px] text-slate-400 tnum">#{{ t.id }} · {{ t.time_ago }}</div>
+                    </div>
                   </div>
-                  <div class="text-[11px] text-slate-400 max-w-[16rem] truncate" title="{{ t.reason }}">{{ t.reason or '' }}</div>
-                  <div class="text-[11px] text-slate-400 tnum">#{{ t.id }} · {{ t.time_ago }}</div>
                 </td>
                 <!-- Contact -->
                 <td class="px-3 py-2 whitespace-nowrap">

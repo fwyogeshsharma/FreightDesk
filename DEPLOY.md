@@ -31,6 +31,7 @@ docker compose up -d db
 .venv\Scripts\python.exe scripts\init_db.py
 .venv\Scripts\python.exe scripts\migrate_report_fields.py    # field-report columns
 .venv\Scripts\python.exe scripts\migrate_user_accounts.py    # users + attribution columns
+.venv\Scripts\python.exe scripts\migrate_async_processing.py # async processing + photo-storage columns
 
 # Process videos into the DB (+ keep the CSV as a backup):
 run.bat --input videos --sink both          # or --sink db
@@ -107,7 +108,51 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web python scripts/init_db.py
 docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web python scripts/migrate_report_fields.py
 docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web python scripts/migrate_user_accounts.py
+docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web python scripts/migrate_async_processing.py
 ```
+
+### Mobile-report photos — async processing & GCS storage (≤2-day retention)
+
+`POST /api/trucks/report` is **asynchronous**: it accepts the report, stores the photos, and
+returns `202` immediately; a background worker OCRs them and the app polls `GET /api/trucks/{id}`
+until `processing_status` is `DONE` (see `API_CONTRACT.md`). Photos are kept **at most ~2 days**
+(for OCR + telecaller review), then deleted — only the extracted text is permanent.
+
+In prod, store the photos in a **GCS bucket whose lifecycle rule enforces the 2-day expiry** (so
+deletion is guaranteed by GCP, and the 2 GB VM's disk is never used for images). One-time setup
+(run from your laptop with `gcloud`, or Cloud Shell):
+
+```bash
+# 1. Create a private bucket in the same region as the VM
+gcloud storage buckets create gs://freightdesk-report-photos \
+  --project=agile-airship-198614 --location=us-central1 --uniform-bucket-level-access
+
+# 2. Auto-delete objects 2 days after creation (the retention requirement, enforced by GCP)
+printf '{"rule":[{"action":{"type":"Delete"},"condition":{"age":2}}]}' > /tmp/lifecycle.json
+gcloud storage buckets update gs://freightdesk-report-photos --lifecycle-file=/tmp/lifecycle.json
+
+# 3. Let the VM's service account read/write the bucket (no key files — uses the VM identity).
+#    Find the VM service account: GCP Console → VM → "Service account", or:
+#    gcloud compute instances describe rolling-expense-prod --zone=us-central1-a \
+#      --format="value(serviceAccounts[0].email)"
+gcloud storage buckets add-iam-policy-binding gs://freightdesk-report-photos \
+  --member="serviceAccount:<VM_SERVICE_ACCOUNT_EMAIL>" --role=roles/storage.objectAdmin
+```
+
+Then point the app at it via the VM's `.env` and restart:
+
+```bash
+IMAGE_STORAGE_BACKEND=gcs
+GCS_BUCKET=freightdesk-report-photos
+# IMAGE_RETENTION_DAYS is informational here — GCS lifecycle does the actual deleting.
+```
+
+> The web container authenticates to GCS with the VM's own service account (Application Default
+> Credentials) — **no JSON key file needed**. Locally, leave `IMAGE_STORAGE_BACKEND=local` (plain
+> files under `./uploads`, swept after 2 days) so you don't need GCS to develop.
+>
+> **Single-worker only:** the OCR queue lives in one process. Keep uvicorn at one worker on the VM
+> (the default). Scaling workers needs a shared queue first.
 
 > `migrate_user_accounts.py` adds the `users` + `user_sessions` tables and the reporter/
 > reviewer attribution columns, then seeds an admin from `ADMIN_USERNAME`/`ADMIN_PASSWORD`.
@@ -185,7 +230,9 @@ run_webapp.bat
 
 ### `POST /api/trucks/report` — contract for the mobile app
 
-`multipart/form-data`. **Images are processed (OCR) but never stored.**
+`multipart/form-data`. **Asynchronous** — returns `202` immediately; the app polls
+`GET /api/trucks/{id}` for `processing_status` (full contract in `API_CONTRACT.md`). Photos are
+stored ≤2 days for OCR + review, then auto-deleted.
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
@@ -209,8 +256,8 @@ curl -F images=@a.jpg -F images=@b.jpg \
 ```
 
 Responses:
-- `200` → `{ "truck": {…}, "images_processed": n, "verification_status": "VERIFIED|UNVERIFIED", "reason": "...", "plate_status": "VERIFIED|MISMATCH|REPORTED|OCR_ONLY|NONE", "phone_status": "MATCH|MERGED|REPORTED_ONLY" }`
-- `400` → blank phone / more than 5 images; `422` → missing required field.
+- `202` → `{ "id": n, "processing_status": "QUEUED", "review_status": "PENDING", "images_accepted": n, "status_url": "/api/trucks/n" }` — then poll `status_url` until `processing_status` is `DONE`/`FAILED`.
+- `400` → blank phone / more than 5 images / no decodable image; `422` → missing required field.
 
 **Trust model (contributors are anonymous and paid for correct uploads — never trusted
 on their word):** the request is **always stored**, but only `verification_status =

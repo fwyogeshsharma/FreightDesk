@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "FreightDesk (local Docker)",
+      "Group": "Servers",
+      "Host": "127.0.0.1",
+      "Port": 5432,
+      "MaintenanceDB": "trucks",
+      "Username": "postgres",
+      "SSLMode": "prefer",
+      "Comment": "Dockerized Postgres for FreightDesk local dev"
+    }
+  }
+}

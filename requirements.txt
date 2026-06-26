@@ -18,6 +18,11 @@ uvicorn[standard]
 python-multipart
 pydantic-settings
 
+# Temporary photo storage for async mobile reports (GCS backend; ≤2-day retention).
+# Only needed when IMAGE_STORAGE_BACKEND=gcs (prod VM). The local dev backend uses
+# plain files and needs nothing extra.
+google-cloud-storage
+
 # PaddleOCR (higher accuracy) — not yet available for Python 3.14
 # Install when PaddleOCR adds Python 3.14 support:
 #   pip install paddlepaddle paddleocr
