@@ -18,6 +18,12 @@ uploads/
 
 # ── Secrets / local env ──────────────────────────────────
 .env
+# GCS / service-account key files — NEVER commit these
+*-key.json
+gcs-key*.json
+secrets/
+# Host/VM-local compose overrides (e.g. mounting a GCS key into the web container)
+docker-compose.override.yml
 
 # ── Auto-downloaded weights (ultralytics fetches yolov8n.pt on first run) ──
 /yolov8n.pt

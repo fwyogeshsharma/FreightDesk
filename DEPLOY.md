@@ -148,11 +148,52 @@ GCS_BUCKET=freightdesk-report-photos
 ```
 
 > The web container authenticates to GCS with the VM's own service account (Application Default
-> Credentials) — **no JSON key file needed**. Locally, leave `IMAGE_STORAGE_BACKEND=local` (plain
-> files under `./uploads`, swept after 2 days) so you don't need GCS to develop.
+> Credentials) — **no JSON key file needed** — *provided the VM has a storage read-write scope*
+> (`cloud-platform` or `devstorage.read_write`). Default GCE VMs often have `devstorage.read_only`,
+> which permits reads but blocks uploads; widening the scope needs a VM stop/start. Locally, leave
+> `IMAGE_STORAGE_BACKEND=local` (plain files under `./uploads`, swept after 2 days).
 >
 > **Single-worker only:** the OCR queue lives in one process. Keep uvicorn at one worker on the VM
 > (the default). Scaling workers needs a shared queue first.
+
+#### Shared VM (can't reboot) — use a dedicated service-account key instead
+
+If the VM hosts other apps and you can't take a reboot to widen its scope, don't touch the VM's
+service account at all. Give **only the FreightDesk container** its own credentials: a dedicated
+service account with access to just this bucket, plus a key file mounted into the container.
+
+```bash
+# (Cloud Shell / local gcloud) — after the bucket exists:
+SA=freightdesk-gcs@agile-airship-198614.iam.gserviceaccount.com
+gcloud iam service-accounts create freightdesk-gcs \
+  --display-name="FreightDesk report photos" --project=agile-airship-198614
+gcloud storage buckets add-iam-policy-binding gs://freightdesk-report-photos-agile-airship-198614 \
+  --member="serviceAccount:$SA" --role=roles/storage.objectAdmin
+gcloud iam service-accounts keys create gcs-key.json --iam-account=$SA
+# copy the key to the VM (keep it OUT of git — .gitignore already ignores *-key.json):
+gcloud compute scp gcs-key.json rolling-expense-prod:~/FreightDesk/gcs-key.json \
+  --zone=us-central1-a --project=agile-airship-198614
+```
+
+On the VM, set `.env` and add a local override that mounts the key (no reboot, only the
+FreightDesk container restarts):
+
+```bash
+# ~/FreightDesk/.env
+IMAGE_STORAGE_BACKEND=gcs
+GCS_BUCKET=freightdesk-report-photos-agile-airship-198614
+GOOGLE_APPLICATION_CREDENTIALS=/app/gcs-key.json
+```
+```yaml
+# ~/FreightDesk/docker-compose.override.yml  (git-ignored, VM-local)
+services:
+  web:
+    volumes:
+      - ./gcs-key.json:/app/gcs-key.json:ro
+```
+```bash
+sudo docker-compose up -d            # recreates only freightdesk_web; other apps untouched
+```
 
 > `migrate_user_accounts.py` adds the `users` + `user_sessions` tables and the reporter/
 > reviewer attribution columns, then seeds an admin from `ADMIN_USERNAME`/`ADMIN_PASSWORD`.

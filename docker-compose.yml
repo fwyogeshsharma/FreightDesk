@@ -38,11 +38,19 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-trucks}
       ADMIN_USER: ${ADMIN_USER:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      # Async mobile-report photo storage (see DEPLOY.md). Default "local"; set to "gcs"
+      # in .env for prod. GOOGLE_APPLICATION_CREDENTIALS points at a mounted key file
+      # when the VM's own service account can't be used (see docker-compose.override.yml).
+      IMAGE_STORAGE_BACKEND: ${IMAGE_STORAGE_BACKEND:-local}
+      IMAGE_STORAGE_DIR: ${IMAGE_STORAGE_DIR:-/app/uploads}
+      IMAGE_RETENTION_DAYS: ${IMAGE_RETENTION_DAYS:-2}
+      GCS_BUCKET: ${GCS_BUCKET:-}
+      GCS_PREFIX: ${GCS_PREFIX:-}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
     ports:
       # Default: localhost only. For a direct-IP quick test set WEB_BIND=0.0.0.0:<freeport>;
       # behind a reverse proxy (Caddy/Traefik/nginx) leave default or use a free localhost port.
       - "${WEB_BIND:-127.0.0.1:8000}:8000"
-    # The app reads only the database — no shared files needed (photos aren't stored).
 
   # Extraction pipeline — run on demand, NOT part of `up` (hence the profile).
   # Mounts the host's video folder read-only so the container can find the footage.
