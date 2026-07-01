@@ -28,6 +28,16 @@ def _norm_plate(s: str) -> str:
     return _ALNUM.sub('', (s or '').upper())
 
 
+# Letter/digit pairs OCR commonly confuses on plates (look-alike glyphs, esp. at an
+# angle or in low light). Folding both sides onto the same symbol before comparing
+# lets a near-miss like 'G' vs '6' count as equal instead of a full substitution.
+_CONFUSABLES = str.maketrans({'G': '6', 'O': '0', 'I': '1', 'S': '5', 'B': '8', 'Z': '2', 'Q': '0'})
+
+
+def _fold_confusables(s: str) -> str:
+    return s.translate(_CONFUSABLES)
+
+
 def _plate_fragments(ocr: dict) -> list:
     """Normalized alnum OCR tokens that could be the plate, or one line of it.
     Body-text tokens must contain a digit to qualify, so plain company words aren't
@@ -67,7 +77,24 @@ def _match_reported_plate(n_rep: str, ocr: dict, max_dist: int):
                 candidates.add(a + b)
     candidates.add("".join(frags))        # and all fragments joined, in read order
     best = min(candidates, key=lambda c: _levenshtein(n_rep, c))
-    return best if _levenshtein(n_rep, best) <= max_dist else None
+    if _levenshtein(n_rep, best) <= max_dist:
+        return best
+
+    # Single-line-only reads: plates are painted on two lines, and OCR often catches
+    # just one of them (usually the bottom series+number, occasionally the top state/
+    # RTO code) while missing the other entirely — the missing line alone blows the
+    # edit-distance budget even when the captured line is a clean read. If a fragment
+    # EXACTLY matches the corresponding slice of the reported plate (head or tail)
+    # once common OCR look-alike swaps are folded away (G/6, O/0, I/1, S/5, B/8, Z/2),
+    # count it as confirmed — a telecaller verifies every report by phone before it's
+    # reward-eligible anyway. Exact-after-folding (not fuzzy) so a coincidental
+    # one-character difference that ISN'T a look-alike swap still counts as a mismatch.
+    for frag in frags:
+        if 4 <= len(frag) < len(n_rep):
+            f = _fold_confusables(frag)
+            if f == _fold_confusables(n_rep[-len(frag):]) or f == _fold_confusables(n_rep[:len(frag)]):
+                return frag
+    return None
 
 
 def _clean_phone(s: str) -> str:
