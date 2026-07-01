@@ -78,11 +78,16 @@
                 <td class="px-3 py-2 whitespace-nowrap">
                   <div class="flex items-start gap-2">
                     {% if t.image_keys %}
-                      <a href="/trucks/{{ t.id }}/image/0" target="_blank" title="View uploaded photo (kept ~2 days)">
-                        <img src="/trucks/{{ t.id }}/image/0" alt="" loading="lazy"
-                             class="w-12 h-12 object-cover rounded-md border border-slate-200 bg-slate-100 hover:ring-2 hover:ring-amber-400"
-                             onerror="this.closest('a').style.display='none'">
-                      </a>
+                      <div class="flex flex-wrap gap-1 w-24">
+                        {% for idx in range(t.image_keys|length) %}
+                          <a href="/trucks/{{ t.id }}/image/{{ idx }}" target="_blank"
+                             title="Photo {{ idx + 1 }} of {{ t.image_keys|length }} (kept ~2 days)">
+                            <img src="/trucks/{{ t.id }}/image/{{ idx }}" alt="" loading="lazy"
+                                 class="w-11 h-11 object-cover rounded-md border border-slate-200 bg-slate-100 hover:ring-2 hover:ring-amber-400"
+                                 onerror="this.closest('a').style.display='none'">
+                          </a>
+                        {% endfor %}
+                      </div>
                     {% endif %}
                     <div>
                       <div class="flex items-center gap-2">
