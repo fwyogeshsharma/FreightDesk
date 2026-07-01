@@ -152,14 +152,20 @@ def deduplicate(texts: List[Tuple[str, float]], allow_digit_fragments: bool = Fa
 _DIGIT_CONFUSION = str.maketrans('IilL|OoSsBZz', '111110058822')
 
 
-def _extract_phones(texts: List[str]) -> str:
-    """Extract Indian phone numbers (10 digits, start 6-9).
-    OCR misreads single digits, so the same painted number yields variants across
-    frames — collapse numbers within Levenshtein distance 2, keeping the variant
-    that was read most often."""
+_PHONE_MIN_CONF = 0.5
+
+
+def _extract_phones(texts: List[Tuple[str, float]]) -> str:
+    """Extract Indian phone numbers (10 digits, start 6-9) from (text, confidence)
+    pairs. OCR misreads single digits, so the same painted number yields variants
+    across frames — collapse numbers within Levenshtein distance 2, keeping the
+    variant that was read most often. A candidate is only kept if OCR was reasonably
+    confident about it at least once (>= _PHONE_MIN_CONF); a single low-confidence
+    misread (e.g. a smudged/scratched digit) shouldn't surface as a callable number."""
     from collections import Counter
     counts: Counter = Counter()
-    for t in texts:
+    best_conf: dict = {}
+    for t, conf in texts:
         # In digit-heavy strings, fix common OCR confusions ("981i008120" -> "9811008120")
         if sum(c.isdigit() for c in t) >= 6:
             t = t.translate(_DIGIT_CONFUSION)
@@ -167,10 +173,14 @@ def _extract_phones(texts: List[str]) -> str:
         digits = re.sub(r'\D', '', t)
         digits = re.sub(r'^0091|^91(?=\d{10})|^0(?=\d{10})', '', digits)
         for m in _PHONE_RE.finditer(digits):
-            counts[m.group(1)] += 1
+            num = m.group(1)
+            counts[num] += 1
+            best_conf[num] = max(best_conf.get(num, 0.0), conf)
 
     kept: List[str] = []
     for num, _ in counts.most_common():
+        if best_conf.get(num, 0.0) < _PHONE_MIN_CONF:
+            continue
         if all(_levenshtein(num, k) > 2 for k in kept):
             kept.append(num)
     return '; '.join(sorted(kept))
@@ -360,8 +370,8 @@ def extract_truck_fields(event, allow_digit_fragments: bool = False) -> Optional
         return None
 
     company = _extract_company_name(body_unique)
-    # Raw (pre-dedup) texts give repeat counts for collapsing phone variants
-    phone = _extract_phones([t for t, _ in body_raw])
+    # Raw (pre-dedup) texts give repeat counts + confidence for collapsing phone variants
+    phone = _extract_phones(body_raw)
     website = _extract_websites(body_unique)
     vtype = _detect_vehicle_type(body_unique, getattr(event, 'class_votes', None))
     city = _extract_cities(body_unique)

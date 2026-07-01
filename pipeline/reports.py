@@ -99,7 +99,8 @@ def _match_reported_plate(n_rep: str, ocr: dict, max_dist: int):
 
 def _clean_phone(s: str) -> str:
     """Canonical 10-digit Indian mobile, or '' if it isn't one."""
-    got = _extract_phones([s or ''])
+    # User-typed, not OCR — always fully confident, so it's never confidence-gated.
+    got = _extract_phones([(s or '', 1.0)])
     return got.split('; ')[0] if got else ''
 
 
