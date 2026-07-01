@@ -103,24 +103,33 @@ def _clean_token(text: str) -> str:
     return t
 
 
-def _is_noise(text: str) -> bool:
-    """True if the text is too short, purely numeric, or obvious garbage."""
+def _is_noise(text: str, allow_digit_fragments: bool = False) -> bool:
+    """True if the text is too short, purely numeric, or obvious garbage.
+
+    Pure digit strings are noise by default — video/stream frames often carry a
+    burned-in OSD clock ("12:45:33" -> "124533"), and a short digit run can't be
+    told apart from that on shape alone. `allow_digit_fragments` (image_api mobile
+    reports, which have no OSD overlay) trusts a 4+ digit run instead — it's far
+    more likely to be a partial plate/series read than clock noise."""
     clean = re.sub(r'[^A-Z0-9]', '', text.upper())
     if len(clean) < 2:
         return True
     # Pure digit strings: keep only if they contain a full 10-digit mobile number
-    # (otherwise they're OSD clock fragments or partial reads)
+    # (otherwise they're OSD clock fragments or partial reads) — unless the caller
+    # has ruled out OSD noise and wants short digit runs kept as plate candidates.
     if re.match(r'^\d+$', clean) and not _PHONE_RE.search(clean):
+        if allow_digit_fragments and len(clean) >= 4:
+            return False
         return True
     return False
 
 
-def deduplicate(texts: List[Tuple[str, float]]) -> List[str]:
+def deduplicate(texts: List[Tuple[str, float]], allow_digit_fragments: bool = False) -> List[str]:
     """Deduplicate OCR texts: normalize, drop noise, collapse near-duplicates."""
     normalized: dict = {}
     for text, conf in texts:
         n = normalize_text(_clean_token(text))
-        if _is_noise(n):
+        if _is_noise(n, allow_digit_fragments):
             continue
         if n not in normalized or conf > normalized[n]:
             normalized[n] = conf
@@ -324,25 +333,28 @@ def _extract_other(texts: List[str], exclude: List[str]) -> str:
 
 # ── Noise gate ─────────────────────────────────────────────────────────────────
 
-def is_noise_event(event, body_unique: List[str] = None) -> bool:
+def is_noise_event(event, body_unique: List[str] = None, allow_digit_fragments: bool = False) -> bool:
     """A brief detection with no plate and no readable text — a false positive."""
     if body_unique is None:
-        body_unique = deduplicate(event.body_texts)
+        body_unique = deduplicate(event.body_texts, allow_digit_fragments)
     return not event.best_plate and not body_unique and event.frame_count < 5
 
 
 # ── The shared field extractor ──────────────────────────────────────────────────
 
-def extract_truck_fields(event) -> Optional[dict]:
+def extract_truck_fields(event, allow_digit_fragments: bool = False) -> Optional[dict]:
     """Turn a closed TruckEvent into structured content fields.
 
     Returns None for noise events (no plate, no text, seen only briefly). The
     returned dict holds identity/content only — NOT sequential ids or run
     progress, which are the responsibility of each individual sink.
+
+    allow_digit_fragments: set by image_api reports (see `_is_noise`) — video/stream
+    callers leave this False so OSD-clock digit noise still gets filtered as before.
     """
     plate_texts = [(p, 1.0) for p in event.plate_candidates.keys()]
     body_raw = event.body_texts  # list of (text, conf)
-    body_unique = deduplicate(body_raw)
+    body_unique = deduplicate(body_raw, allow_digit_fragments)
 
     if is_noise_event(event, body_unique):
         return None

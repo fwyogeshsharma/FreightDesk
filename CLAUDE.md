@@ -65,9 +65,15 @@ extraction params (sampling FPS, YOLO confidence, OCR backend, tracker gaps) liv
 **One shared extraction core.** `pipeline/extract.py::extract_truck_fields(event)` turns a closed
 `TruckEvent` into structured fields (plate, company, phone, website, type, city) using regex over
 OCR text. It holds **zero** output-format concerns (no ids, no progress, no CSV/DB shape) so all
-three sources produce *identical* extraction. Every sink implements the same duck-typed interface:
-`.write(event, progress) -> bool`. Sinks: `pipeline/writer.py` (CSV), `pipeline/db_writer.py`
-(Postgres). `main.py::_MultiWriter` fans one event to several sinks.
+three sources produce *identical* extraction — with one deliberate, narrow exception:
+`allow_digit_fragments` (default `False`). Video/stream frames can carry a burned-in OSD clock, so
+a short pure-digit OCR read is treated as noise by default. Mobile report photos have no OSD
+overlay, so `webapp/processing.py` passes `allow_digit_fragments=True`, trusting a 4+ digit run as
+a plausible partial plate/series read instead of discarding it — this is what lets a plate photo
+that only captured one line (e.g. the bottom series+number, missing the state/RTO prefix) still
+verify. Every sink implements the same duck-typed interface: `.write(event, progress) -> bool`.
+Sinks: `pipeline/writer.py` (CSV), `pipeline/db_writer.py` (Postgres). `main.py::_MultiWriter` fans
+one event to several sinks.
 
 **Pipeline flow (per video/stream):** `video_sampler` (motion-gated sampling + bursts) →
 `detector` (YOLOv8 vehicle gate, optional dedicated plate model under `models/`) → `ocr_engine`

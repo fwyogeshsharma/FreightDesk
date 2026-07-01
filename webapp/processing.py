@@ -127,7 +127,10 @@ def process_truck(truck_id: int) -> None:
         event = build_event_from_images(
             images, models.detector, models.plate_detector, models.frame_ocr,
             capture_crop=False)
-        ocr = extract_truck_fields(event) or {}
+        # image_api photos carry no OSD clock overlay (unlike video/stream frames),
+        # so a short digit-only OCR read is far more likely a partial plate/series
+        # fragment than clock noise — trust it instead of discarding it.
+        ocr = extract_truck_fields(event, allow_digit_fragments=True) or {}
         fields = reconcile(reported, ocr, Config())
         db_writer.finalize_report(truck_id, fields, images_count=len(images))
         log.info("report %s DONE (%s)", truck_id, fields.get("verification_status"))
