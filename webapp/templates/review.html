@@ -147,10 +147,16 @@
                 <td class="px-3 py-2 hidden lg:table-cell text-slate-700">{{ t.company_name or '—' }}</td>
                 <!-- Load / Location -->
                 <td class="px-3 py-2 hidden xl:table-cell text-slate-600 whitespace-nowrap">
-                  {% if t.loaded_status %}<div>{{ '📦 ' + t.loaded_status if t.loaded_status=='LOADED' else '⬜ ' + t.loaded_status }}{% if t.num_wheels %} · 🛞 {{ t.num_wheels }}{% endif %}</div>{% endif %}
+                  {% if t.loaded_status or t.body_type %}
+                    <div>
+                      {% if t.loaded_status %}{{ '📦 ' + t.loaded_status if t.loaded_status=='LOADED' else '⬜ ' + t.loaded_status }}{% endif %}
+                      {% if t.num_wheels %} · 🛞 {{ t.num_wheels }}{% endif %}
+                      {% if t.body_type %} · 🚛 {{ t.body_type }}{% endif %}
+                    </div>
+                  {% endif %}
                   {% if t.location %}<div>🗺️ {{ t.location }}</div>{% endif %}
                   {% if t.latitude and t.longitude %}<a class="text-blue-600 hover:underline text-xs" target="_blank" href="https://www.google.com/maps?q={{ t.latitude }},{{ t.longitude }}">open map</a>{% endif %}
-                  {% if not t.loaded_status and not t.location %}<span class="text-slate-300">—</span>{% endif %}
+                  {% if not t.loaded_status and not t.body_type and not t.location %}<span class="text-slate-300">—</span>{% endif %}
                 </td>
                 <!-- Reporter -->
                 <td class="px-3 py-2 hidden lg:table-cell text-slate-600 whitespace-nowrap">{{ t.reported_by or '—' }}</td>

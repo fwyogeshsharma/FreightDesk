@@ -66,6 +66,7 @@ curl -X POST http://localhost:8000/api/trucks/report \
 | `phone_number` | string | ✅ yes | Phone the user read on the truck (10-digit Indian mobile). |
 | `vehicle_number` | string | optional | Number plate the user read, e.g. `RJ14CA1234`. |
 | `loaded_status` | string | optional | `loaded` or `unloaded`. |
+| `body_type` | string | optional | One of the app's fixed body-type options, e.g. `Container`. Stored verbatim — the app owns the choice list, the server does not validate it against an enum. |
 | `number_of_wheels` | integer | optional | e.g. `12`. |
 | `location` | string | optional | Address / place text, e.g. `NH-48, Jaipur`. |
 | `latitude` | float | optional | GPS, e.g. `26.9124`. |
@@ -81,6 +82,7 @@ curl -X POST http://localhost:8000/api/trucks/report \
   -F "phone_number=9811008120" \
   -F "vehicle_number=RJ14CA1234" \
   -F "loaded_status=loaded" \
+  -F "body_type=Container" \
   -F "number_of_wheels=12" \
   -F "location=NH-48, Jaipur" \
   -F "latitude=26.9124" \

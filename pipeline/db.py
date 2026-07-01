@@ -64,6 +64,9 @@ class Truck(Base):
 
     # ── Mobile field-report fields (source = image_api) ──────────────────────────
     loaded_status: Mapped[Optional[str]] = mapped_column(String(16))   # LOADED / UNLOADED
+    # User-chosen from a fixed set of options in the Android app (e.g. "Container");
+    # stored verbatim as sent — no server-side enum, the app owns the choice list.
+    body_type: Mapped[Optional[str]] = mapped_column(String(32))
     location: Mapped[Optional[str]] = mapped_column(String(255))       # address / place text
     latitude: Mapped[Optional[float]] = mapped_column(Float)
     longitude: Mapped[Optional[float]] = mapped_column(Float)
@@ -132,6 +135,7 @@ class Truck(Base):
             "first_seen_sec": self.first_seen_sec,
             "last_seen_sec": self.last_seen_sec,
             "loaded_status": self.loaded_status,
+            "body_type": self.body_type,
             "location": self.location,
             "latitude": self.latitude,
             "longitude": self.longitude,

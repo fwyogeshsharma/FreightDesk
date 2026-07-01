@@ -55,6 +55,7 @@
   {{ field('Vehicle type', t.vehicle_type) }}
   {{ field('Location', t.location or t.city) }}
   {% if t.loaded_status %}{{ field('Load', 'Loaded' if t.loaded_status=='LOADED' else 'Empty') }}{% endif %}
+  {{ field('Body type', t.body_type) }}
   {{ field('Wheels', t.num_wheels) }}
   {{ field('Source', 'Field report' if t.source=='image_api' else t.source|title) }}
   {{ field('Seen', t.detected_at_human ~ '  (' ~ t.time_ago ~ ')') }}

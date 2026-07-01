@@ -284,6 +284,7 @@ async def report(
     _creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
     vehicle_number: Optional[str] = Form(None),
     loaded_status: Optional[str] = Form(None),
+    body_type: Optional[str] = Form(None),
     number_of_wheels: Optional[int] = Form(None),
     location: Optional[str] = Form(None),
     latitude: Optional[float] = Form(None),
@@ -335,7 +336,8 @@ async def report(
 
     reported = {
         "vehicle_number": vehicle_number, "phone_number": phone_number,
-        "loaded_status": loaded_status, "number_of_wheels": number_of_wheels,
+        "loaded_status": loaded_status, "body_type": body_type,
+        "number_of_wheels": number_of_wheels,
         "location": location, "latitude": latitude, "longitude": longitude,
         "captured_at": captured_at, "reported_by": reported_by,
     }
@@ -678,7 +680,7 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
         d["fresh"] = _fresh_bucket(r.detected_at)
         trucks.append(d)
 
-    show_load = any(t["loaded_status"] for t in trucks)
+    show_load = any(t["loaded_status"] or t.get("body_type") for t in trucks)
     show_location = any((t.get("location") or t.get("city")) for t in trucks)
     active_filters = sum(bool(x) for x in (q, source, vtype, loc)) \
         + (fresh != "all") + (verified != "all")

@@ -46,7 +46,7 @@
         <input name="phone_number" required placeholder="9811008120"
                class="w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-400">
       </div>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-3 gap-3">
         <div>
           <label class="block text-sm font-semibold mb-1">Vehicle number</label>
           <input name="vehicle_number" placeholder="RJ14CA1234"
@@ -56,6 +56,16 @@
           <label class="block text-sm font-semibold mb-1">Load</label>
           <select name="loaded_status" class="w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-400">
             <option value="">—</option><option value="loaded">Loaded</option><option value="unloaded">Unloaded</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold mb-1">Body type</label>
+          <select name="body_type" class="w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-400">
+            <option value="">—</option>
+            <option value="Open">Open</option>
+            <option value="Closed">Closed</option>
+            <option value="Container">Container</option>
+            <option value="Tanker">Tanker</option>
           </select>
         </div>
       </div>

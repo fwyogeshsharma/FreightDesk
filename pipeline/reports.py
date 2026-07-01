@@ -171,6 +171,9 @@ def reconcile(reported: dict, ocr: dict, config) -> dict:
     # ── Other report fields ─────────────────────────────────────────────────────
     loaded = (reported.get("loaded_status") or "").strip().upper()
     loaded_status = loaded if loaded in ("LOADED", "UNLOADED") else None
+    # User-chosen from the Android app's fixed option list — stored verbatim,
+    # no server-side enum (the app, not the backend, owns the choice list).
+    body_type = (reported.get("body_type") or "").strip() or None
 
     return {
         "detected_at":      _parse_dt(reported.get("captured_at")),
@@ -186,6 +189,7 @@ def reconcile(reported: dict, ocr: dict, config) -> dict:
         "phone_reported":   phone_reported,
         "phone_ocr":        phone_ocr,
         "loaded_status":    loaded_status,
+        "body_type":        body_type,
         "location":         (reported.get("location") or "").strip() or None,
         "latitude":         reported.get("latitude"),
         "longitude":        reported.get("longitude"),
