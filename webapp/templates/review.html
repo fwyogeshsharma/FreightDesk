@@ -70,6 +70,20 @@
                 <th class="font-semibold px-3 py-2 text-right">Decision</th>
               </tr>
             </thead>
+            {% macro photo_tile(truck_id, idx, n, full=False) %}
+              {% set size_cls = 'w-full h-11' if full else 'w-11 h-11' %}
+              <a href="/trucks/{{ truck_id }}/image/{{ idx }}" target="_blank"
+                 class="block {{ 'col-span-2' if full else '' }}"
+                 title="Photo {{ idx + 1 }} of {{ n }} (kept ~2 days)">
+                <img src="/trucks/{{ truck_id }}/image/{{ idx }}" alt="" loading="lazy"
+                     class="{{ size_cls }} object-cover rounded-md border border-slate-200 bg-slate-100 hover:ring-2 hover:ring-amber-400"
+                     onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden'); this.nextElementSibling.classList.add('flex'); const a=this.closest('a'); a.removeAttribute('href'); a.removeAttribute('target'); a.classList.add('cursor-default'); a.title='Photo expired (kept ~2 days)'">
+                <span class="hidden {{ size_cls }} shrink-0 items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-slate-300"
+                      title="Photo expired (kept ~2 days)">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="10" r="1.8"/><path d="M21 16l-5.5-5-4.5 4.5-3-2.5-5 4"/></svg>
+                </span>
+              </a>
+            {% endmacro %}
             <tbody class="divide-y divide-slate-100">
               {% for t in reports %}
               <tr id="row-{{ t.id }}" class="even:bg-slate-50/40 align-top"
@@ -78,19 +92,22 @@
                 <td class="px-3 py-2 whitespace-nowrap">
                   <div class="flex items-start gap-2">
                     {% if t.image_keys %}
-                      <div class="flex flex-wrap gap-1 w-24">
-                        {% for idx in range(t.image_keys|length) %}
-                          <a href="/trucks/{{ t.id }}/image/{{ idx }}" target="_blank"
-                             title="Photo {{ idx + 1 }} of {{ t.image_keys|length }} (kept ~2 days)">
-                            <img src="/trucks/{{ t.id }}/image/{{ idx }}" alt="" loading="lazy"
-                                 class="w-11 h-11 object-cover rounded-md border border-slate-200 bg-slate-100 hover:ring-2 hover:ring-amber-400"
-                                 onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden'); this.nextElementSibling.classList.add('flex'); const a=this.closest('a'); a.removeAttribute('href'); a.removeAttribute('target'); a.classList.add('cursor-default')">
-                            <span class="hidden w-11 h-11 shrink-0 items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-slate-300"
-                                  title="Photo expired (kept ~2 days)">
-                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="10" r="1.8"/><path d="M21 16l-5.5-5-4.5 4.5-3-2.5-5 4"/></svg>
-                            </span>
-                          </a>
-                        {% endfor %}
+                      {% set n = t.image_keys|length %}
+                      <div class="grid grid-cols-2 gap-1 w-[100px] h-[52px] shrink-0 p-1 rounded-lg border border-slate-200 bg-slate-50">
+                        {% if n == 1 %}
+                          {{ photo_tile(t.id, 0, n, full=True) }}
+                        {% elif n == 2 %}
+                          {{ photo_tile(t.id, 0, n) }}
+                          {{ photo_tile(t.id, 1, n) }}
+                        {% else %}
+                          {{ photo_tile(t.id, 0, n) }}
+                          <button type="button"
+                                  class="w-11 h-11 flex items-center justify-center rounded-md border border-slate-200 bg-slate-700 text-white text-xs font-semibold hover:bg-slate-600"
+                                  title="{{ n - 1 }} more photo(s) — opens each in a new tab (kept ~2 days)"
+                                  onclick="{% for idx in range(1, n) %}window.open('/trucks/{{ t.id }}/image/{{ idx }}', '_blank');{% endfor %}">
+                            +{{ n - 1 }}
+                          </button>
+                        {% endif %}
                       </div>
                     {% endif %}
                     <div>
