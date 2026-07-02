@@ -220,13 +220,16 @@
                 {% endif %}
                 <!-- Load -->
                 {% if show_load %}
-                <td class="px-4 py-3.5 whitespace-nowrap hidden xl:table-cell">
-                  {% if t.loaded_status=='LOADED' %}
-                    <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">Loaded</span>
-                  {% elif t.loaded_status=='UNLOADED' %}
-                    <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">Empty</span>
-                  {% elif not t.body_type %}<span class="text-slate-300">—</span>{% endif %}
-                  {% if t.body_type %}<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">{{ t.body_type }}</span>{% endif %}
+                <td class="px-4 py-3.5 hidden xl:table-cell">
+                  <div class="flex items-center gap-1.5">
+                    {% if t.loaded_status=='LOADED' %}
+                      <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">Loaded</span>
+                    {% elif t.loaded_status=='UNLOADED' %}
+                      <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">Empty</span>
+                    {% endif %}
+                    {% if t.body_type %}<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">{{ t.body_type }}</span>{% endif %}
+                    {% if not t.loaded_status and not t.body_type %}<span class="text-slate-300">—</span>{% endif %}
+                  </div>
                 </td>
                 {% endif %}
                 <!-- Trust: video/stream = Auto Verified (trusted, no review); image_api = Pending→Verified/Rejected -->
@@ -251,9 +254,9 @@
                 </td>
                 <!-- Seen -->
                 <td class="px-4 py-3.5 whitespace-nowrap text-right text-slate-600 font-medium tnum" title="{{ t.detected_at_human }}">{{ t.time_ago }}</td>
-                <!-- Source: quiet, text-only — a supporting label, not a competing accent -->
+                <!-- Source: quiet label, not a competing accent — slightly stronger contrast for legibility -->
                 <td class="px-4 py-3.5 whitespace-nowrap text-right">
-                  <span class="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                  <span class="text-[11px] font-medium uppercase tracking-wide text-slate-500 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">
                     {% if t.source=='image_api' %}Report{% elif t.source=='stream' %}Stream{% else %}Video{% endif %}
                   </span>
                 </td>

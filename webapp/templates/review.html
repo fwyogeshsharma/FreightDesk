@@ -46,24 +46,32 @@
 
       <div class="h-5 w-px bg-slate-200 hidden sm:block"></div>
 
-      <div class="inline-flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
-        {% for v in ['pending','passed','rejected','all'] %}
-          <a href="/review?review={{ v }}&verification={{ verification }}"
-             class="px-2.5 py-1 rounded-md text-[13px] font-medium transition-colors
-                    {{ 'bg-white text-slate-900 shadow-sm' if review==v else 'text-slate-500 hover:text-slate-700' }}">
-            {{ v|capitalize }}
-          </a>
-        {% endfor %}
+      <div class="flex items-center gap-1.5">
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 hidden sm:inline">Status</span>
+        <div class="inline-flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
+          {% for v in ['pending','passed','rejected','all'] %}
+            <a href="/review?review={{ v }}&verification={{ verification }}"
+               class="px-2.5 py-1 rounded-md text-[13px] font-medium transition-colors
+                      {{ 'bg-white text-slate-900 shadow-sm' if review==v else 'text-slate-500 hover:text-slate-700' }}">
+              {{ v|capitalize }}
+            </a>
+          {% endfor %}
+        </div>
       </div>
 
-      <div class="inline-flex items-center gap-0.5">
-        {% for v in ['all','verified','unverified'] %}
-          <a href="/review?review={{ review }}&verification={{ v }}"
-             class="px-2 py-1 rounded-md text-[12px] font-medium transition-colors
-                    {{ 'bg-slate-100 text-slate-700' if verification==v else 'text-slate-400 hover:text-slate-600' }}">
-            {{ v|capitalize }}
-          </a>
-        {% endfor %}
+      <div class="h-5 w-px bg-slate-200 hidden sm:block"></div>
+
+      <div class="flex items-center gap-1.5">
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 hidden sm:inline">Verification</span>
+        <div class="inline-flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
+          {% for v in ['all','verified','unverified'] %}
+            <a href="/review?review={{ review }}&verification={{ v }}"
+               class="px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors
+                      {{ 'bg-white text-slate-900 shadow-sm' if verification==v else 'text-slate-500 hover:text-slate-700' }}">
+              {{ v|capitalize }}
+            </a>
+          {% endfor %}
+        </div>
       </div>
     </div>
   </div>
@@ -178,19 +186,24 @@
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
                       </a>
                     {% endif %}
-                    {% if t.reported_by %}<span class="text-slate-400">via {{ t.reported_by }}</span>{% endif %}
+                    {% if t.reported_by %}
+                      <span class="inline-flex items-center gap-1 text-slate-500" title="Reported by {{ t.reported_by }}">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7v1"/></svg>
+                        via {{ t.reported_by }}
+                      </span>
+                    {% endif %}
                     {% if not t.company_name and not t.loaded_status and not t.num_wheels and not t.body_type and not t.location and not t.reported_by %}
                       <span class="text-slate-300">—</span>
                     {% endif %}
                   </div>
                 </td>
-                <!-- RIGHT ZONE: review status + Pass / Reject -->
+                <!-- RIGHT ZONE: review status + Pass / Reject, grouped as one compact action block -->
                 <td class="px-4 py-3 whitespace-nowrap text-right">
-                  <div class="flex flex-col items-end gap-1.5">
+                  <div class="inline-flex flex-col items-end gap-1 bg-slate-50 border border-slate-100 rounded-lg px-2 py-1.5">
                     {% if t.review_status=='PASSED' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-600 text-white">Passed</span>
                     {% elif t.review_status=='REJECTED' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-600 text-white">Rejected</span>
                     {% else %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600">Pending</span>{% endif %}
-                    <div class="inline-flex gap-1.5">
+                    <div class="inline-flex gap-1">
                       <button onclick="decide({{ t.id }},'PASSED')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[13px] font-semibold px-3 py-1.5 rounded-md transition-colors">✓ Pass</button>
                       <button onclick="openReject({{ t.id }}, '{{ t.license_plate or ('#' ~ t.id) }}')" class="bg-white hover:bg-red-50 text-red-600 border border-red-200 text-[13px] font-semibold px-3 py-1.5 rounded-md transition-colors">✗ Reject</button>
                     </div>
