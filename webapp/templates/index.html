@@ -169,18 +169,27 @@
               {% for t in trucks %}
               <tr class="even:bg-slate-50/40 hover:bg-emerald-50/40 transition-colors align-middle"
                   style="animation-delay: {{ '%.3f'|format(loop.index0 * 0.022) }}s">
-                <!-- Vehicle / plate (with recency dot) -->
-                <td class="px-4 py-3.5 whitespace-nowrap">
-                  <span class="inline-block w-2 h-2 rounded-full align-middle mr-2
-                    {% if t.fresh=='new' %}bg-emerald-500{% elif t.fresh=='recent' %}bg-amber-400{% else %}bg-slate-300{% endif %}"
-                    title="{% if t.fresh=='new' %}Seen in the last 24 hours{% elif t.fresh=='recent' %}Seen in the last 7 days{% else %}Older sighting{% endif %}"></span>
-                  {% if t.license_plate %}
-                    <span class="font-mono font-semibold tracking-wide text-slate-900">{{ t.license_plate }}</span>
-                  {% else %}<span class="text-slate-300">—</span>{% endif %}
-                  {% if t.group_count and t.group_count > 1 %}
-                    <span class="ml-1 text-[10px] font-semibold text-slate-400 bg-slate-100 rounded-full px-1.5 py-0.5 align-middle"
-                          title="{{ t.group_count }} sightings grouped into this lead — click for history">+{{ t.group_count - 1 }} sightings</span>
-                  {% endif %}
+                <!-- Vehicle / plate (with recency dot) — the ONE primary grouped-lead cue lives here -->
+                <td class="px-4 py-3.5">
+                  <div class="flex items-start gap-2">
+                    <span class="inline-block w-2 h-2 rounded-full shrink-0 mt-1.5
+                      {% if t.fresh=='new' %}bg-emerald-500{% elif t.fresh=='recent' %}bg-amber-400{% else %}bg-slate-300{% endif %}"
+                      title="{% if t.fresh=='new' %}Seen in the last 24 hours{% elif t.fresh=='recent' %}Seen in the last 7 days{% else %}Older sighting{% endif %}"></span>
+                    <div>
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        {% if t.license_plate %}
+                          <span class="font-mono font-semibold tracking-wide text-slate-900 whitespace-nowrap">{{ t.license_plate }}</span>
+                        {% else %}<span class="text-slate-300">—</span>{% endif %}
+                        {% if t.group_count and t.group_count > 1 %}
+                          <span class="text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-1.5 py-0.5 whitespace-nowrap"
+                                title="{{ t.group_count }} sightings grouped into this lead — click for history">+{{ t.group_count - 1 }} sightings</span>
+                        {% endif %}
+                      </div>
+                      {% if t.group_count and t.group_count > 1 %}
+                        <div class="text-[11px] text-slate-400 mt-0.5">{{ t.group_count }} reports</div>
+                      {% endif %}
+                    </div>
+                  </div>
                 </td>
                 <!-- Company -->
                 <td class="px-4 py-3.5 max-w-[18rem]">
@@ -204,8 +213,11 @@
                       </button>
                       {% if phones|length > 1 %}
                         <button type="button" data-phones='{{ phones[1:] | tojson }}' onclick="togglePhones(event, this)"
-                                class="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md px-1.5 py-1 hover:bg-emerald-100"
-                                title="Show all numbers">+{{ phones|length - 1 }}</button>
+                                class="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400 hover:text-slate-600 border border-slate-200 hover:border-slate-300 rounded px-1.5 py-0.5 transition-colors"
+                                title="Show all numbers">
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
+                          +{{ phones|length - 1 }} phone{{ 's' if phones|length > 2 else '' }}
+                        </button>
                       {% endif %}
                     </div>
                   {% else %}<span class="text-slate-300">—</span>{% endif %}
