@@ -176,17 +176,17 @@
                       {% if t.fresh=='new' %}bg-emerald-500{% elif t.fresh=='recent' %}bg-amber-400{% else %}bg-slate-300{% endif %}"
                       title="{% if t.fresh=='new' %}Seen in the last 24 hours{% elif t.fresh=='recent' %}Seen in the last 7 days{% else %}Older sighting{% endif %}"></span>
                     <div>
-                      <div class="flex items-center gap-1.5 flex-wrap">
+                      <div class="flex items-center gap-2 flex-wrap">
                         {% if t.license_plate %}
                           <span class="font-mono font-semibold tracking-wide text-slate-900 whitespace-nowrap">{{ t.license_plate }}</span>
                         {% else %}<span class="text-slate-300">—</span>{% endif %}
                         {% if t.group_count and t.group_count > 1 %}
-                          <span class="text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-1.5 py-0.5 whitespace-nowrap"
+                          <span class="text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-2 py-0.5 whitespace-nowrap"
                                 title="{{ t.group_count }} sightings grouped into this lead — click for history">+{{ t.group_count - 1 }} sightings</span>
                         {% endif %}
                       </div>
                       {% if t.group_count and t.group_count > 1 %}
-                        <div class="text-[11px] text-slate-400 mt-0.5">{{ t.group_count }} reports</div>
+                        <div class="text-[11px] text-slate-400 mt-1">{{ t.group_count }} reports</div>
                       {% endif %}
                     </div>
                   </div>

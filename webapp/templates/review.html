@@ -111,8 +111,8 @@
               <tr id="row-{{ t.id }}" class="even:bg-slate-50/40 align-top"
                   style="animation-delay: {{ '%.3f'|format(loop.index0 * 0.022) }}s">
                 <!-- LEFT ZONE: truck identity — thumbnails + plate + verification badge + reason + age/id -->
-                <td class="px-4 py-3 whitespace-nowrap">
-                  <div class="flex items-start gap-2.5">
+                <td class="px-4 py-2.5 whitespace-nowrap">
+                  <div class="flex items-start gap-2">
                     {% if t.image_keys %}
                       {% set n = t.image_keys|length %}
                       <div class="grid grid-cols-2 gap-1 w-[100px] h-[52px] shrink-0 p-1 rounded-lg border border-slate-200 bg-slate-50">
@@ -151,7 +151,7 @@
                   </div>
                 </td>
                 <!-- MIDDLE ZONE: phone + company + load/location + wheels/body type + reporter -->
-                <td class="px-4 py-3 border-l border-slate-100">
+                <td class="px-4 py-2.5 border-l border-slate-100">
                   {% set phones = t.phone_number | phones %}
                   <div class="flex items-center gap-1.5 flex-wrap">
                     {% if phones %}
@@ -174,7 +174,7 @@
                             title="typed {{ t.phone_reported }} · ocr {{ t.phone_ocr }}">i</span>
                     {% endif %}
                   </div>
-                  <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-slate-500 mt-1.5">
+                  <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-slate-500 mt-1">
                     {% if t.company_name %}<span class="text-slate-600 font-medium">{{ t.company_name }}</span>{% endif %}
                     {% if t.loaded_status %}<span>{{ '📦' if t.loaded_status=='LOADED' else '⬜' }} {{ t.loaded_status|title }}</span>{% endif %}
                     {% if t.num_wheels %}<span>🛞 {{ t.num_wheels }}</span>{% endif %}
@@ -187,8 +187,8 @@
                       </a>
                     {% endif %}
                     {% if t.reported_by %}
-                      <span class="inline-flex items-center gap-1 text-slate-400 text-[11px]" title="Reported by {{ t.reported_by }}">
-                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7v1"/></svg>
+                      <span class="inline-flex items-center gap-1.5 text-slate-400" title="Reported by {{ t.reported_by }}">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a7 7 0 0 1 7-7h2a7 7 0 0 1 7 7v1"/></svg>
                         via {{ t.reported_by }}
                       </span>
                     {% endif %}
@@ -198,8 +198,8 @@
                   </div>
                 </td>
                 <!-- RIGHT ZONE: review status + Pass / Reject, grouped as one compact action block -->
-                <td class="px-4 py-3 whitespace-nowrap text-right align-middle border-l border-slate-100">
-                  <div class="inline-flex flex-col items-end gap-1 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5">
+                <td class="px-4 py-2.5 whitespace-nowrap text-right align-middle border-l border-slate-100">
+                  <div class="inline-flex flex-col items-end gap-1 bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-[5px]">
                     {% if t.review_status=='PASSED' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-emerald-600 text-white">Passed</span>
                     {% elif t.review_status=='REJECTED' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-600 text-white">Rejected</span>
                     {% else %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600">Pending</span>{% endif %}
