@@ -1,0 +1,4 @@
+# Shell scripts run on the Linux VM — always store/checkout with LF, regardless
+# of core.autocrlf on a given machine (a CRLF script fails on Linux with a
+# "$'\r': command not found" error).
+*.sh text eol=lf

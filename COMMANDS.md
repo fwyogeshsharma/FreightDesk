@@ -46,15 +46,28 @@ Create an operator account locally:
 SSH into the VM (GCP Console → Compute Engine → VM instances → **SSH**), then:
 ```bash
 cd ~/FreightDesk
-git pull
-sudo docker-compose up -d --build                 # rebuild + restart web (+ db)
+./deploy.sh
 ```
-Run any pending migrations (idempotent — safe to re-run every deploy):
+That's the whole deploy: it pulls, rebuilds the `web` image, runs every migration script
+(all idempotent — safe to re-run even when a given pull didn't touch the schema, so you
+never have to remember which ones are "new"), then restarts and tails the logs.
+
+<details>
+<summary>What it runs, if you need to do it by hand (e.g. one step failed)</summary>
+
 ```bash
+cd ~/FreightDesk
+git pull
+sudo docker-compose build web                                             # bake in new code FIRST —
+                                                                            # migration scripts live inside the image
 sudo docker-compose run --rm web python scripts/init_db.py
 sudo docker-compose run --rm web python scripts/migrate_report_fields.py
 sudo docker-compose run --rm web python scripts/migrate_user_accounts.py
+sudo docker-compose run --rm web python scripts/migrate_async_processing.py
+sudo docker-compose run --rm web python scripts/migrate_body_type.py
+sudo docker-compose up -d                                                 # restart with the new image
 ```
+</details>
 
 ---
 
