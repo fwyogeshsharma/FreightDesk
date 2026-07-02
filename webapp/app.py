@@ -37,6 +37,7 @@ from sqlalchemy import distinct, func, or_, select
 
 from pipeline import auth
 from pipeline.db import SourceType, Truck, User, get_session_factory, init_db
+from webapp.broker_grouping import find_lead_members, group_broker_rows, lead_phone, lead_plate
 
 _HERE = Path(__file__).parent
 
@@ -255,21 +256,49 @@ def api_truck(truck_id: int):
         return JSONResponse(row.as_dict())
 
 
+def _enrich(row: Truck) -> dict:
+    d = row.as_dict()
+    d["time_ago"] = _time_ago(row.detected_at)
+    d["detected_at_human"] = row.detected_at.strftime("%Y-%m-%d %H:%M") if row.detected_at else ""
+    return d
+
+
 @app.get("/trucks/{truck_id}/panel", response_class=HTMLResponse)
 def truck_panel(request: Request, truck_id: int):
-    """HTML fragment for the broker detail slide-over (loaded via HTMX on row click)."""
+    """HTML fragment for the broker detail slide-over (loaded via HTMX on row click).
+
+    This truck may be the representative of a grouped broker lead (see
+    broker_grouping.py) — independently of whatever filters narrowed the list
+    the user clicked from, look up every sibling report sharing its lead
+    identity so the drawer can show full sighting history."""
     Session = get_session_factory()
     with Session() as s:
         row = s.get(Truck, truck_id)
         if not row:
             raise HTTPException(404, "Truck not found")
-        d = row.as_dict()
-        d["time_ago"] = _time_ago(row.detected_at)
-        d["detected_at_human"] = (row.detected_at.strftime("%Y-%m-%d %H:%M")
-                                  if row.detected_at else "")
+        d = _enrich(row)
         d["reviewed_at_human"] = (row.reviewed_at.strftime("%Y-%m-%d %H:%M")
                                   if row.reviewed_at else "")
         d["fresh"] = _fresh_bucket(row.detected_at)
+
+        phone = lead_phone(d)
+        plate = lead_plate(d)  # normalized + reliability-checked; only used if no phone
+        candidate_stmt = None
+        if phone:
+            candidate_stmt = select(Truck).where(Truck.phone_number.ilike(f"%{phone}%"))
+        elif plate:
+            # Broad substring pre-filter on the RAW plate text (the stored column
+            # isn't normalized) — find_lead_members() below refines it precisely.
+            candidate_stmt = select(Truck).where(Truck.license_plate.ilike(f"%{d['license_plate']}%"))
+
+        history = []
+        if candidate_stmt is not None:
+            candidates = [_enrich(c) for c in s.execute(candidate_stmt).scalars().all()]
+            members = find_lead_members(candidates, truck_id)
+            if len(members) > 1:
+                history = sorted(members, key=lambda m: m.get("detected_at") or "", reverse=True)
+
+    d["history"] = history
     return templates.TemplateResponse(request=request, name="detail_panel.html",
                                       context={"t": d})
 
@@ -619,14 +648,35 @@ def review(request: Request, review: str = "pending",
 
 # ── Broker UI ────────────────────────────────────────────────────────────────────
 
-# Whitelisted sortable columns (header key -> column). Default order is newest-first.
-_SORT_COLS = {
-    "seen": Truck.detected_at,
-    "company": Truck.company_name,
-    "vehicle": Truck.license_plate,
-    "type": Truck.vehicle_type,
-    "source": Truck.source,
+# Whitelisted sort keys -> the lead-dict field each one sorts by (see
+# broker_grouping.py). Default order is newest-first.
+_LEAD_SORT_FIELDS = {
+    "seen": "detected_at",
+    "company": "company_name",
+    "vehicle": "license_plate",
+    "type": "vehicle_type",
+    "source": "source",
 }
+
+# Grouping needs the whole filtered result set in hand before it can cluster and
+# paginate, so the SQL query no longer LIMITs to one page — it fetches up to this
+# many of the most recent matches instead. Comfortably above this app's current
+# scale; revisit (e.g. a materialized lead id) if the table grows much larger.
+_GROUPING_FETCH_CAP = 5000
+
+
+def _sort_leads(leads: list, sort: str, descending: bool) -> list:
+    field = _LEAD_SORT_FIELDS.get(sort, "detected_at")
+    if field == "detected_at":
+        # every row has one (NOT NULL) — plain direct sort
+        return sorted(leads, key=lambda ld: ld.get("detected_at") or "", reverse=descending)
+    # nulls-last regardless of direction, tie-broken newest-first — mirrors the
+    # old SQL `(primary.nulls_last(), Truck.detected_at.desc())` ordering
+    leads = sorted(leads, key=lambda ld: ld.get("detected_at") or "", reverse=True)
+    with_val = [ld for ld in leads if ld.get(field)]
+    without_val = [ld for ld in leads if not ld.get(field)]
+    with_val.sort(key=lambda ld: ld.get(field), reverse=descending)
+    return with_val + without_val
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -635,11 +685,8 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
           verified: str = "all", sort: str = "seen", dir: str = "desc",
           fresh: str = "all", page: int = Query(1, ge=1)):
     from urllib.parse import urlencode
-    sort = sort if sort in _SORT_COLS else "seen"
+    sort = sort if sort in _LEAD_SORT_FIELDS else "seen"
     descending = dir != "asc"
-    col = _SORT_COLS[sort]
-    primary = col.desc().nulls_last() if descending else col.asc().nulls_last()
-    order = (primary,) if sort == "seen" else (primary, Truck.detected_at.desc())
     cutoff = _fresh_cutoff(fresh)  # None for "all" (default — most data is historical)
     fresh = fresh if fresh in _FRESH_WINDOWS else "all"
     verified = "verified" if verified == "verified" else "all"
@@ -661,9 +708,13 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
     can_review = _can_review(user)
     Session = get_session_factory()
     with Session() as s:
-        total = s.execute(_filtered(select(func.count()).select_from(Truck))).scalar_one()
-        rows = s.execute(_filtered(select(Truck)).order_by(*order)
-                         .limit(PAGE_SIZE).offset((page - 1) * PAGE_SIZE)).scalars().all()
+        # All existing filters apply exactly as before, at the DB level. What's
+        # different: no LIMIT/OFFSET here — broker-lead grouping (see
+        # broker_grouping.py) needs the whole filtered set in hand before it can
+        # correctly cluster reports into leads and paginate those leads.
+        rows = s.execute(_filtered(select(Truck))
+                         .order_by(Truck.detected_at.desc())
+                         .limit(_GROUPING_FETCH_CAP)).scalars().all()
         types = [t for (t,) in s.execute(
             select(distinct(Truck.vehicle_type)).where(Truck.vehicle_type.isnot(None))
             .order_by(Truck.vehicle_type)).all()]
@@ -672,13 +723,19 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
             .order_by(Truck.city)).all()]
         pending_count = _pending_reports(s) if can_review else 0
 
-    trucks = []
+    reports = []
     for r in rows:
         d = r.as_dict()
         d["time_ago"] = _time_ago(r.detected_at)
         d["detected_at_human"] = r.detected_at.strftime("%Y-%m-%d %H:%M") if r.detected_at else ""
         d["fresh"] = _fresh_bucket(r.detected_at)
-        trucks.append(d)
+        reports.append(d)
+
+    leads = _sort_leads(group_broker_rows(reports), sort, descending)
+    total = len(leads)  # leads, not raw reports — the correct unit once grouped
+    pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = min(page, pages)
+    trucks = leads[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]
 
     show_load = any(t["loaded_status"] or t.get("body_type") for t in trucks)
     show_location = any((t.get("location") or t.get("city")) for t in trucks)
@@ -688,7 +745,6 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
     base_qs = urlencode({"q": q or "", "source": source or "", "vtype": vtype or "",
                          "loc": loc or "", "fresh": fresh, "verified": verified})
 
-    pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     return templates.TemplateResponse(request=request, name="index.html", context={
         "trucks": trucks, "q": q or "", "source": source or "",
         "vtype": vtype or "", "loc": loc or "", "verified": verified,

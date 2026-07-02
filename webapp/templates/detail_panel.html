@@ -79,6 +79,35 @@
 </div>
 {% endif %}
 
+<!-- Sighting history: other reports grouped into this same broker lead
+     (broker_grouping.py) — only present when there's more than one. -->
+{% if t.history %}
+<div class="mb-5">
+  <div class="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Sighting history ({{ t.history|length }})</div>
+  <div class="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
+    {% for h in t.history %}
+      <div class="border border-slate-100 rounded-lg px-3 py-2 text-xs {{ 'bg-amber-50/60 border-amber-100' if h.id == t.id else '' }}">
+        <div class="flex items-center justify-between gap-2">
+          <span class="font-medium text-slate-700">{{ h.detected_at_human or h.time_ago }}</span>
+          <span class="text-slate-400">{{ 'Field report' if h.source=='image_api' else h.source|title }}</span>
+        </div>
+        <div class="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-slate-500">
+          {% if h.source=='image_api' %}
+            <span>{{ h.verification_status|title if h.verification_status else '—' }} · {{ (h.review_status|title) if h.review_status else 'Pending' }}</span>
+          {% endif %}
+          {% if h.location or h.city %}<span>📍 {{ h.location or h.city }}</span>{% endif %}
+          {% if h.loaded_status %}<span>{{ 'Loaded' if h.loaded_status=='LOADED' else 'Empty' }}</span>{% endif %}
+          {% if h.body_type %}<span>🚛 {{ h.body_type }}</span>{% endif %}
+          {% if h.vehicle_type %}<span>{{ h.vehicle_type }}</span>{% endif %}
+          {% if h.reported_by %}<span>via {{ h.reported_by }}</span>{% endif %}
+          {% if h.phone_number and h.phone_number != t.phone_number %}<span class="font-mono">{{ h.phone_number }}</span>{% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <!-- Raw extraction (internal) -->
 <details class="mb-4">
   <summary class="text-[11px] uppercase tracking-wider text-slate-400 cursor-pointer select-none">Raw extraction</summary>

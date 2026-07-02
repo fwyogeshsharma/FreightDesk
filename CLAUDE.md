@@ -120,6 +120,19 @@ newest-first, click-to-call), `/review` telecaller queue (login required), JSON 
 `GET /trucks/{id}/image/{idx}` streams a stored report photo from storage (within the ~2-day
 window) so telecallers can eyeball uploads in the `/review` queue.
 
+**`/` groups reports into broker leads; `/review` stays report-level — these are deliberately
+different units.** `webapp/broker_grouping.py::group_broker_rows()` collapses repeat sightings of
+the same real-world truck (matched conservatively — same normalized phone, and same normalized
+plate whenever that phone maps to more than one plate, to avoid merging genuinely different
+trucks that share a contact number like a dispatcher's line) into one row for the broker page.
+`/review` never imports this module — one queue item is always exactly one submitted report, and
+Pass/Reject acts on that report's id. Because grouping must see the whole filtered set before it
+can cluster and paginate, `index()` fetches up to `_GROUPING_FETCH_CAP` matches (no SQL
+`LIMIT/OFFSET`) and groups/sorts/paginates in Python — the one scaling tradeoff to watch as the
+`trucks` table grows. The detail slide-over (`GET /trucks/{id}/panel`) independently re-resolves
+that truck's full sibling history (via a phone/plate lookup, not the list's current filters) so
+"Sighting history" is always complete regardless of what filter you had applied to find the lead.
+
 **Async worker constraints (`webapp/processing.py`):** a single in-process thread drains an
 in-memory queue and processes reports **one at a time** — deliberate, so two concurrent OCR
 passes can't OOM the 2 GB prod VM. The in-memory queue belongs to ONE uvicorn worker; the VM

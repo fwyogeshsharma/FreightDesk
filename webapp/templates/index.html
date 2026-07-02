@@ -177,6 +177,10 @@
                   {% if t.license_plate %}
                     <span class="font-mono font-semibold tracking-wide text-slate-900">{{ t.license_plate }}</span>
                   {% else %}<span class="text-slate-300">—</span>{% endif %}
+                  {% if t.group_count and t.group_count > 1 %}
+                    <span class="ml-1 text-[10px] font-semibold text-slate-400 bg-slate-100 rounded-full px-1.5 py-0.5 align-middle"
+                          title="{{ t.group_count }} sightings grouped into this lead — click for history">+{{ t.group_count - 1 }} sightings</span>
+                  {% endif %}
                 </td>
                 <!-- Company -->
                 <td class="px-4 py-3.5 max-w-[18rem]">
