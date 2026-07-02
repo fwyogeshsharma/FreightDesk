@@ -12,7 +12,7 @@
     tailwind.config = { theme: { extend: {
       fontFamily: { sans: ['"IBM Plex Sans"','ui-sans-serif','system-ui','sans-serif'],
                     mono: ['"IBM Plex Mono"','ui-monospace','monospace'] },
-      colors: { ink: '#0a0e14' },
+      colors: { ink: '#0a0e14', marigold: '#D97E1F', 'marigold-soft': '#F0B860' },
     }}}
   </script>
   <style>
@@ -34,7 +34,7 @@
   <!-- Page heading -->
   <div class="bg-white border-b border-slate-200">
     <div class="max-w-[1500px] mx-auto px-5 pt-5 pb-4">
-      <h1 class="text-xl font-semibold text-slate-900 tracking-tight">Review Queue</h1>
+      <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Review Queue</h1>
       <p class="text-sm text-slate-500 mt-0.5">Review submitted truck reports and approve or reject them</p>
     </div>
   </div>
@@ -78,8 +78,17 @@
 
   <main class="max-w-[1500px] mx-auto px-5 py-6">
     {% if not reports %}
-      <div class="bg-white rounded-xl border border-slate-200 py-24 text-center text-slate-500">
-        No reports in this view.
+      <div class="bg-white rounded-xl border border-slate-200 py-24 text-center">
+        <div class="text-slate-300 mb-3">
+          <svg class="mx-auto" width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 12.5l2.5 2.5L16 10"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>
+        </div>
+        {% if review != 'pending' or verification != 'all' %}
+          <p class="text-slate-600 font-medium">No reports match this view.</p>
+          <p class="text-sm text-slate-400 mt-1">Try a different Status or Verification filter above.</p>
+        {% else %}
+          <p class="text-slate-600 font-medium">The queue is empty.</p>
+          <p class="text-sm text-slate-400 mt-1">Nothing is waiting on review right now — new field reports will show up here.</p>
+        {% endif %}
       </div>
     {% else %}
       <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -98,7 +107,7 @@
                  class="block {{ 'col-span-2' if full else '' }}"
                  title="Photo {{ idx + 1 }} of {{ n }} (kept ~2 days)">
                 <img src="/trucks/{{ truck_id }}/image/{{ idx }}" alt="" loading="lazy"
-                     class="{{ size_cls }} object-cover rounded-md border border-slate-200 bg-slate-100 hover:ring-2 hover:ring-amber-400"
+                     class="{{ size_cls }} object-cover rounded-md border border-slate-200 bg-slate-100 hover:ring-2 hover:ring-marigold-soft"
                      onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden'); this.nextElementSibling.classList.add('flex'); const a=this.closest('a'); a.removeAttribute('href'); a.removeAttribute('target'); a.classList.add('cursor-default'); a.title='Photo expired (kept ~2 days)'">
                 <span class="hidden {{ size_cls }} shrink-0 items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-slate-300"
                       title="Photo expired (kept ~2 days)">

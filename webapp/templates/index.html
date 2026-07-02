@@ -16,7 +16,8 @@
           sans: ['"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
           mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
         },
-        colors: { ink: '#0a0e14', canvas: '#eef0f4' },
+        colors: { ink: '#0a0e14', canvas: '#eef0f4',
+          marigold: '#D97E1F', 'marigold-soft': '#F0B860' },
       }}
     }
   </script>
@@ -47,7 +48,7 @@
   <!-- Page heading -->
   <div class="bg-white border-b border-slate-200">
     <div class="max-w-[1500px] mx-auto px-5 pt-5 pb-4">
-      <h1 class="text-xl font-semibold text-slate-900 tracking-tight">Truck Sightings</h1>
+      <h1 class="text-2xl font-bold text-slate-900 tracking-tight">Truck Sightings</h1>
       <p class="text-sm text-slate-500 mt-0.5">Find and call available trucks</p>
     </div>
   </div>
@@ -64,12 +65,12 @@
         <div class="relative">
           <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
           <input type="text" name="q" value="{{ q }}" autocomplete="off" placeholder="Search anything…"
-                 class="w-80 max-w-[55vw] pl-8 pr-3 py-1.5 rounded-lg border border-slate-300 bg-white text-[13px] text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400">
+                 class="w-80 max-w-[55vw] pl-8 pr-3 py-1.5 rounded-lg border border-slate-300 bg-white text-[13px] text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-marigold-soft">
         </div>
 
         <div class="h-5 w-px bg-slate-200 mx-1 hidden sm:block"></div>
 
-        {% set ghost = "px-2 py-1 rounded-md border border-transparent bg-transparent text-slate-500 text-[13px] hover:bg-slate-100 hover:border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-colors" %}
+        {% set ghost = "px-2 py-1 rounded-md border border-transparent bg-transparent text-slate-500 text-[13px] hover:bg-slate-100 hover:border-slate-200 focus:outline-none focus:ring-2 focus:ring-marigold-soft transition-colors" %}
         <select name="source" class="{{ ghost }}">
           <option value="" {% if not source %}selected{% endif %}>All sources</option>
           <option value="video" {% if source=='video' %}selected{% endif %}>Video</option>
@@ -113,7 +114,7 @@
            hx-target="#results" hx-select="#results" hx-swap="outerHTML" hx-push-url="true"
            class="inline-flex items-center gap-1 hover:text-slate-800 transition-colors {% if active %}text-slate-800{% endif %}">
           {{ label }}
-          {% if active %}<span class="text-amber-500">{{ '▼' if dir=='desc' else '▲' }}</span>
+          {% if active %}<span class="text-marigold">{{ '▼' if dir=='desc' else '▲' }}</span>
           {% else %}<span class="text-slate-300">↕</span>{% endif %}
         </a>
       </th>
