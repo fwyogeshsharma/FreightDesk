@@ -24,8 +24,6 @@
     body { background: var(--canvas, #eef0f4); }
     :root { --canvas:#eef0f4; }
     .tnum { font-variant-numeric: tabular-nums; }
-    /* hi-vis hairline under the masthead */
-    .accent-rule { background: linear-gradient(90deg,#f59e0b 0%,#f59e0b 18%,transparent 18%,transparent 100%); }
     /* quiet staggered row reveal on load */
     @keyframes rowin { from { opacity:0; transform: translateY(4px);} to {opacity:1; transform:none;} }
     tbody tr { animation: rowin .35s ease both; }
@@ -40,61 +38,70 @@
 </head>
 <body class="font-sans text-slate-800 antialiased">
 
-  <!-- Shared app shell + broker filter bar -->
+  <!-- Sticky chrome: nav only — everything below scrolls with the page -->
   <header class="sticky top-0 z-20 shadow-sm">
     {% set nav_active = 'sightings' %}
     {% include "_nav.html" %}
-
-    <form id="filters" hx-get="/" hx-target="#results" hx-select="#results"
-          hx-swap="outerHTML" hx-push-url="true"
-          hx-trigger="change, submit, keyup changed delay:400ms">
-      <input type="hidden" name="sort" value="{{ sort }}">
-      <input type="hidden" name="dir" value="{{ dir }}">
-
-      <!-- light search + quick-filter bar -->
-      <div class="bg-white border-b border-slate-200">
-        <div class="max-w-[1500px] mx-auto px-5 py-1.5 flex flex-wrap items-center gap-1.5 text-sm">
-          <div class="relative">
-            <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-            <input type="text" name="q" value="{{ q }}" autocomplete="off" placeholder="Search anything…"
-                   class="w-72 max-w-[55vw] pl-8 pr-3 py-1 rounded-md border border-slate-200 bg-slate-50 focus:bg-white text-[13px] text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400">
-          </div>
-          <span class="text-[11px] uppercase tracking-wider text-slate-400 ml-0.5 mr-0.5">Filters</span>
-
-          {% set chip = "px-2 py-1 rounded-md border border-slate-200 bg-white text-slate-600 text-[13px] focus:outline-none focus:ring-2 focus:ring-amber-400 hover:border-slate-300" %}
-          <select name="source" class="{{ chip }}">
-            <option value="" {% if not source %}selected{% endif %}>All sources</option>
-            <option value="video" {% if source=='video' %}selected{% endif %}>Video</option>
-            <option value="image_api" {% if source=='image_api' %}selected{% endif %}>Field report</option>
-            <option value="stream" {% if source=='stream' %}selected{% endif %}>Stream</option>
-          </select>
-          <select name="vtype" class="{{ chip }}">
-            <option value="">All types</option>
-            {% for tp in types %}<option value="{{ tp }}" {% if vtype==tp %}selected{% endif %}>{{ tp|title }}</option>{% endfor %}
-          </select>
-          <select name="loc" class="{{ chip }}">
-            <option value="">All locations</option>
-            {% for ct in cities %}<option value="{{ ct }}" {% if loc==ct %}selected{% endif %}>{{ ct }}</option>{% endfor %}
-          </select>
-          <select name="fresh" title="Recency" class="{{ chip }}">
-            <option value="all" {% if fresh=='all' %}selected{% endif %}>Any time</option>
-            <option value="24h" {% if fresh=='24h' %}selected{% endif %}>Last 24h</option>
-            <option value="7d" {% if fresh=='7d' %}selected{% endif %}>Last 7 days</option>
-            <option value="30d" {% if fresh=='30d' %}selected{% endif %}>Last 30 days</option>
-          </select>
-          <label class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border cursor-pointer select-none transition-colors text-[13px]
-                 {% if verified=='verified' %}border-emerald-300 bg-emerald-50 text-emerald-700{% else %}border-slate-200 bg-white text-slate-600 hover:border-slate-300{% endif %}">
-            <input type="checkbox" name="verified" value="verified" {% if verified=='verified' %}checked{% endif %} class="accent-emerald-600">
-            Verified only
-          </label>
-
-          {% if active_filters %}
-            <a href="/" class="ml-1 text-xs text-slate-500 hover:text-red-600 underline">Clear {{ active_filters }} filter{{ 's' if active_filters > 1 else '' }}</a>
-          {% endif %}
-        </div>
-      </div>
-    </form>
   </header>
+
+  <!-- Page heading -->
+  <div class="bg-white border-b border-slate-200">
+    <div class="max-w-[1500px] mx-auto px-5 pt-5 pb-4">
+      <h1 class="text-xl font-semibold text-slate-900 tracking-tight">Truck Sightings</h1>
+      <p class="text-sm text-slate-500 mt-0.5">Find and call available trucks</p>
+    </div>
+  </div>
+
+  <!-- Search + light filter bar -->
+  <form id="filters" hx-get="/" hx-target="#results" hx-select="#results"
+        hx-swap="outerHTML" hx-push-url="true"
+        hx-trigger="change, submit, keyup changed delay:400ms">
+    <input type="hidden" name="sort" value="{{ sort }}">
+    <input type="hidden" name="dir" value="{{ dir }}">
+
+    <div class="bg-white border-b border-slate-200">
+      <div class="max-w-[1500px] mx-auto px-5 py-2.5 flex flex-wrap items-center gap-2 text-sm">
+        <div class="relative">
+          <svg class="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="text" name="q" value="{{ q }}" autocomplete="off" placeholder="Search anything…"
+                 class="w-80 max-w-[55vw] pl-8 pr-3 py-1.5 rounded-lg border border-slate-300 bg-white text-[13px] text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400">
+        </div>
+
+        <div class="h-5 w-px bg-slate-200 mx-1 hidden sm:block"></div>
+
+        {% set ghost = "px-2 py-1 rounded-md border border-transparent bg-transparent text-slate-500 text-[13px] hover:bg-slate-100 hover:border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-400 transition-colors" %}
+        <select name="source" class="{{ ghost }}">
+          <option value="" {% if not source %}selected{% endif %}>All sources</option>
+          <option value="video" {% if source=='video' %}selected{% endif %}>Video</option>
+          <option value="image_api" {% if source=='image_api' %}selected{% endif %}>Field report</option>
+          <option value="stream" {% if source=='stream' %}selected{% endif %}>Stream</option>
+        </select>
+        <select name="vtype" class="{{ ghost }}">
+          <option value="">All types</option>
+          {% for tp in types %}<option value="{{ tp }}" {% if vtype==tp %}selected{% endif %}>{{ tp|title }}</option>{% endfor %}
+        </select>
+        <select name="loc" class="{{ ghost }}">
+          <option value="">All locations</option>
+          {% for ct in cities %}<option value="{{ ct }}" {% if loc==ct %}selected{% endif %}>{{ ct }}</option>{% endfor %}
+        </select>
+        <select name="fresh" title="Recency" class="{{ ghost }}">
+          <option value="all" {% if fresh=='all' %}selected{% endif %}>Any time</option>
+          <option value="24h" {% if fresh=='24h' %}selected{% endif %}>Last 24h</option>
+          <option value="7d" {% if fresh=='7d' %}selected{% endif %}>Last 7 days</option>
+          <option value="30d" {% if fresh=='30d' %}selected{% endif %}>Last 30 days</option>
+        </select>
+        <label class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer select-none transition-colors text-[13px]
+               {% if verified=='verified' %}bg-emerald-50 text-emerald-700{% else %}text-slate-500 hover:bg-slate-100{% endif %}">
+          <input type="checkbox" name="verified" value="verified" {% if verified=='verified' %}checked{% endif %} class="accent-emerald-600">
+          Verified only
+        </label>
+
+        {% if active_filters %}
+          <a href="/" class="ml-auto text-xs text-slate-400 hover:text-red-600 underline">Clear {{ active_filters }} filter{{ 's' if active_filters > 1 else '' }}</a>
+        {% endif %}
+      </div>
+    </div>
+  </form>
 
   <main class="max-w-[1500px] mx-auto px-5 py-6">
     {% macro sortth(key, label, extra='') %}
@@ -163,7 +170,7 @@
               <tr class="even:bg-slate-50/40 hover:bg-emerald-50/40 transition-colors align-middle"
                   style="animation-delay: {{ '%.3f'|format(loop.index0 * 0.022) }}s">
                 <!-- Vehicle / plate (with recency dot) -->
-                <td class="px-4 py-3 whitespace-nowrap">
+                <td class="px-4 py-3.5 whitespace-nowrap">
                   <span class="inline-block w-2 h-2 rounded-full align-middle mr-2
                     {% if t.fresh=='new' %}bg-emerald-500{% elif t.fresh=='recent' %}bg-amber-400{% else %}bg-slate-300{% endif %}"
                     title="{% if t.fresh=='new' %}Seen in the last 24 hours{% elif t.fresh=='recent' %}Seen in the last 7 days{% else %}Older sighting{% endif %}"></span>
@@ -172,13 +179,13 @@
                   {% else %}<span class="text-slate-300">—</span>{% endif %}
                 </td>
                 <!-- Company -->
-                <td class="px-4 py-3 max-w-[18rem]">
+                <td class="px-4 py-3.5 max-w-[18rem]">
                   {% if t.company_name %}<span class="text-slate-800 font-medium">{{ t.company_name }}</span>
                   {% else %}<span class="text-slate-300">—</span>{% endif %}
                   {% if t.other_text %}<div class="text-xs text-slate-400 truncate" title="{{ t.other_text }}">{{ t.other_text }}</div>{% endif %}
                 </td>
                 <!-- Call (hero) -->
-                <td class="px-4 py-3 whitespace-nowrap">
+                <td class="px-4 py-3.5 whitespace-nowrap">
                   {% set phones = t.phone_number | phones %}
                   {% if phones %}
                     <div class="flex items-center gap-2">
@@ -200,20 +207,20 @@
                   {% else %}<span class="text-slate-300">—</span>{% endif %}
                 </td>
                 <!-- Type -->
-                <td class="px-4 py-3 whitespace-nowrap hidden lg:table-cell">
-                  {% if t.vehicle_type %}<span class="text-slate-600">{{ t.vehicle_type }}</span>
+                <td class="px-4 py-3.5 whitespace-nowrap hidden lg:table-cell">
+                  {% if t.vehicle_type %}<span class="text-slate-500">{{ t.vehicle_type }}</span>
                   {% else %}<span class="text-slate-300">—</span>{% endif %}
                 </td>
                 <!-- Location -->
                 {% if show_location %}
-                <td class="px-4 py-3 whitespace-nowrap hidden lg:table-cell text-slate-600">
+                <td class="px-4 py-3.5 whitespace-nowrap hidden lg:table-cell text-slate-500">
                   {% set loc = t.location or t.city %}
                   {% if loc %}{{ loc }}{% else %}<span class="text-slate-300">—</span>{% endif %}
                 </td>
                 {% endif %}
                 <!-- Load -->
                 {% if show_load %}
-                <td class="px-4 py-3 whitespace-nowrap hidden xl:table-cell">
+                <td class="px-4 py-3.5 whitespace-nowrap hidden xl:table-cell">
                   {% if t.loaded_status=='LOADED' %}
                     <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">Loaded</span>
                   {% elif t.loaded_status=='UNLOADED' %}
@@ -223,7 +230,7 @@
                 </td>
                 {% endif %}
                 <!-- Trust: video/stream = Auto Verified (trusted, no review); image_api = Pending→Verified/Rejected -->
-                <td class="px-4 py-3 whitespace-nowrap">
+                <td class="px-4 py-3.5 whitespace-nowrap">
                   {% if t.source != 'image_api' %}
                     <span class="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200"
                           title="Trusted system-generated record (phone validated by OCR); not part of telecaller review">
@@ -243,19 +250,15 @@
                   {% endif %}
                 </td>
                 <!-- Seen -->
-                <td class="px-4 py-3 whitespace-nowrap text-right text-slate-500 tnum" title="{{ t.detected_at_human }}">{{ t.time_ago }}</td>
-                <!-- Source -->
-                <td class="px-4 py-3 whitespace-nowrap text-right">
-                  {% if t.source=='image_api' %}
-                    <span class="text-[11px] font-medium uppercase tracking-wide px-2 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100">Report</span>
-                  {% elif t.source=='stream' %}
-                    <span class="text-[11px] font-medium uppercase tracking-wide px-2 py-0.5 rounded bg-sky-50 text-sky-600 border border-sky-100">Stream</span>
-                  {% else %}
-                    <span class="text-[11px] font-medium uppercase tracking-wide px-2 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">Video</span>
-                  {% endif %}
+                <td class="px-4 py-3.5 whitespace-nowrap text-right text-slate-600 font-medium tnum" title="{{ t.detected_at_human }}">{{ t.time_ago }}</td>
+                <!-- Source: quiet, text-only — a supporting label, not a competing accent -->
+                <td class="px-4 py-3.5 whitespace-nowrap text-right">
+                  <span class="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+                    {% if t.source=='image_api' %}Report{% elif t.source=='stream' %}Stream{% else %}Video{% endif %}
+                  </span>
                 </td>
                 <!-- Details affordance -->
-                <td class="px-2 py-3 text-right">
+                <td class="px-2 py-3.5 text-right">
                   <button type="button" title="Details"
                           hx-get="/trucks/{{ t.id }}/panel" hx-target="#detail-body" hx-swap="innerHTML"
                           onclick="openDetail()"
