@@ -130,13 +130,22 @@
                 </td>
                 <!-- Contact -->
                 <td class="px-3 py-2 whitespace-nowrap">
-                  {% if t.phone_number %}
-                    <div class="flex flex-col gap-0.5">
-                      {% for ph in t.phone_number.split('; ') %}
-                        <a href="tel:{{ ph }}" class="inline-flex items-center gap-1 font-mono text-[12px] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded transition-colors">
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
-                          {{ ph }}</a>
-                      {% endfor %}
+                  {% set phones = t.phone_number | phones %}
+                  {% if phones %}
+                    <div class="flex items-center gap-1.5">
+                      <a href="tel:{{ phones[0].e164 }}"
+                         class="inline-flex items-center gap-1 font-mono text-[12px] text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-1.5 py-0.5 rounded transition-colors">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
+                        {{ phones[0].pretty }}</a>
+                      <button type="button" data-phone="{{ phones[0].raw }}" onclick="copyPhone(this)"
+                              class="text-slate-300 hover:text-slate-700 transition-colors" title="Copy number">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      </button>
+                      {% if phones|length > 1 %}
+                        <button type="button" data-phones='{{ phones[1:] | tojson }}' onclick="togglePhones(event, this)"
+                                class="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 hover:bg-emerald-100"
+                                title="Show all numbers">+{{ phones|length - 1 }}</button>
+                      {% endif %}
                     </div>
                   {% else %}<span class="text-slate-300">—</span>{% endif %}
                   {% if t.phone_reported and t.phone_ocr and t.phone_reported not in (t.phone_ocr or '') %}
@@ -147,13 +156,8 @@
                 <td class="px-3 py-2 hidden lg:table-cell text-slate-700">{{ t.company_name or '—' }}</td>
                 <!-- Load / Location -->
                 <td class="px-3 py-2 hidden xl:table-cell text-slate-600 whitespace-nowrap">
-                  {% if t.loaded_status or t.body_type %}
-                    <div>
-                      {% if t.loaded_status %}{{ '📦 ' + t.loaded_status if t.loaded_status=='LOADED' else '⬜ ' + t.loaded_status }}{% endif %}
-                      {% if t.num_wheels %} · 🛞 {{ t.num_wheels }}{% endif %}
-                      {% if t.body_type %} · 🚛 {{ t.body_type }}{% endif %}
-                    </div>
-                  {% endif %}
+                  {% if t.loaded_status %}<div>{{ '📦 ' + t.loaded_status if t.loaded_status=='LOADED' else '⬜ ' + t.loaded_status }}{% if t.num_wheels %} · 🛞 {{ t.num_wheels }}{% endif %}</div>{% endif %}
+                  {% if t.body_type %}<div>🚛 {{ t.body_type }}</div>{% endif %}
                   {% if t.location %}<div>🗺️ {{ t.location }}</div>{% endif %}
                   {% if t.latitude and t.longitude %}<a class="text-blue-600 hover:underline text-xs" target="_blank" href="https://www.google.com/maps?q={{ t.latitude }},{{ t.longitude }}">open map</a>{% endif %}
                   {% if not t.loaded_status and not t.body_type and not t.location %}<span class="text-slate-300">—</span>{% endif %}
@@ -192,6 +196,10 @@
     {% endif %}
   </main>
 
+  <!-- Extra phone numbers popover (single, body-level so it escapes the table stacking) -->
+  <div id="phone-pop" onclick="event.stopPropagation()"
+       class="hidden fixed z-50 bg-white border border-slate-200 rounded-lg shadow-xl p-2 min-w-[12rem] space-y-1"></div>
+
   <!-- Reject confirmation modal -->
   <div id="reject-modal" class="hidden fixed inset-0 z-50 items-center justify-center bg-black/50 backdrop-blur-sm p-4"
        onclick="if(event.target===this)closeReject()">
@@ -219,6 +227,63 @@
   </div>
 
   <script>
+    function _copied(btn) {
+      const old = btn.innerHTML;
+      btn.innerHTML = '<span class="text-emerald-600 text-xs font-semibold">Copied</span>';
+      setTimeout(() => { btn.innerHTML = old; }, 1200);
+    }
+    function copyPhone(btn) {
+      const n = (btn.getAttribute('data-phone') || '').trim();
+      if (!n) return;
+      // Synchronous execCommand FIRST — runs inside the click gesture so it works
+      // over plain http (LAN IP) and https alike.
+      let ok = false;
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = n;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        ta.setSelectionRange(0, n.length);
+        ok = !!(document.execCommand && document.execCommand('copy'));
+        document.body.removeChild(ta);
+      } catch (e) { ok = false; }
+      if (!ok && navigator.clipboard && navigator.clipboard.writeText) {
+        try { navigator.clipboard.writeText(n); ok = true; } catch (e) { ok = false; }
+      }
+      if (ok) _copied(btn); else window.prompt('Copy this number:', n);
+    }
+    const COPY_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    function closePhonePops() {
+      const pop = document.getElementById('phone-pop');
+      pop.classList.add('hidden'); pop._owner = null;
+    }
+    function togglePhones(e, btn) {
+      e.stopPropagation();
+      const pop = document.getElementById('phone-pop');
+      if (!pop.classList.contains('hidden') && pop._owner === btn) { closePhonePops(); return; }
+      let phones = [];
+      try { phones = JSON.parse(btn.getAttribute('data-phones') || '[]'); } catch (_) {}
+      pop.innerHTML = phones.map(p =>
+        '<div class="flex items-center gap-2">' +
+          '<a href="tel:' + p.e164 + '" class="flex-1 font-mono text-[13px] text-emerald-700 hover:underline">' + p.pretty + '</a>' +
+          '<button type="button" data-phone="' + p.raw + '" onclick="copyPhone(this)" class="text-slate-400 hover:text-slate-700 p-1" title="Copy">' + COPY_SVG + '</button>' +
+        '</div>'
+      ).join('');
+      pop._owner = btn;
+      const r = btn.getBoundingClientRect();
+      pop.classList.remove('hidden');                 // unhide first so we can measure width
+      const w = pop.offsetWidth;
+      let left = r.left;
+      if (left + w > window.innerWidth - 8) left = window.innerWidth - w - 8;  // keep on-screen
+      pop.style.top = (r.bottom + 4) + 'px';
+      pop.style.left = Math.max(8, left) + 'px';
+    }
+    document.addEventListener('click', closePhonePops);
+    window.addEventListener('scroll', closePhonePops, true);  // fixed popover won't follow scroll
+
     let _rejectId = null;
 
     async function decide(id, status, note = "") {
@@ -253,7 +318,7 @@
       if (id != null) decide(id, "REJECTED", note);
     }
 
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeReject(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeReject(); closePhonePops(); } });
   </script>
 </body>
 </html>
