@@ -182,7 +182,7 @@
                         {% else %}<span class="text-slate-300">—</span>{% endif %}
                         {% if t.group_count and t.group_count > 1 %}
                           <span class="text-[10px] font-semibold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-2 py-0.5 whitespace-nowrap"
-                                title="{{ t.group_count }} sightings grouped into this lead — click for history">+{{ t.group_count - 1 }} sightings</span>
+                                title="{{ t.group_count }} sightings grouped into this lead. Open details to view history.">+{{ t.group_count - 1 }} sightings</span>
                         {% endif %}
                       </div>
                       {% if t.group_count and t.group_count > 1 %}
@@ -276,9 +276,12 @@
                     {% if t.source=='image_api' %}Report{% elif t.source=='stream' %}Stream{% else %}Video{% endif %}
                   </span>
                 </td>
-                <!-- Details affordance -->
+                <!-- Details affordance — the single entry point into the detail drawer.
+                     For grouped rows, the tooltip says so explicitly: the sightings badge
+                     is informational only, this chevron is where the history actually lives. -->
                 <td class="px-2 py-3.5 text-right">
-                  <button type="button" title="Details"
+                  {% set details_label = ('View lead details & sighting history (' ~ t.group_count ~ ')') if (t.group_count and t.group_count > 1) else 'View details' %}
+                  <button type="button" title="{{ details_label }}" aria-label="{{ details_label }}"
                           hx-get="/trucks/{{ t.id }}/panel" hx-target="#detail-body" hx-swap="innerHTML"
                           onclick="openDetail()"
                           class="text-slate-300 hover:text-slate-700 text-lg leading-none transition-colors">›</button>
