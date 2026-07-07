@@ -544,18 +544,27 @@ def patch_truck(truck_id: int, body: ReviewPatch,
 
 
 @app.get("/trucks/{truck_id}/image/{idx}")
-def truck_image(truck_id: int, idx: int, reviewer: Reviewer = Depends(require_reviewer)):
-    """Stream a stored report photo (reviewer-only) so telecallers can eyeball the
-    upload during review. Available only within the ~2-day retention window — returns
-    404 once the photo has been auto-deleted."""
+def truck_image(truck_id: int, idx: int, request: Request,
+                user: Optional[CurrentUser] = Depends(get_current_user)):
+    """Stream a stored report photo. Available to reviewers (telecaller/admin, for
+    queue triage) and to the contributor who submitted the report (so the mobile app
+    can show back what was uploaded); 403 otherwise. Available only within the ~2-day
+    retention window — returns 404 once the photo has been auto-deleted."""
     import mimetypes
     from fastapi.responses import Response
     from pipeline.storage import get_storage
     Session = get_session_factory()
     with Session() as s:
         row = s.get(Truck, truck_id)
-        keys = (row.image_keys or []) if row else []
-        if not row or idx < 0 or idx >= len(keys):
+        if not row:
+            raise HTTPException(404, "image not found")
+        is_owner = bool(user) and row.reported_by_user_id is not None \
+            and user.id == row.reported_by_user_id
+        if not (_can_review(user) or is_owner
+                or _legacy_admin_token_ok(request.headers.get("X-Admin-Token") or "")):
+            raise HTTPException(403, "Not authorized to view this image")
+        keys = row.image_keys or []
+        if idx < 0 or idx >= len(keys):
             raise HTTPException(404, "image not found")
         key = keys[idx]
     data = get_storage().get(key)

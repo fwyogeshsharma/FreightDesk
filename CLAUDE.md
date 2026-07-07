@@ -116,9 +116,12 @@ raise `--workers` on the small prod VM — it OOMs (see COMMANDS.md).
 newest-first, click-to-call), `/review` telecaller queue (login required), JSON API under
 `/api/*`, mobile auth under `/api/auth/*`. The newest-first paging query is the hot path —
 `detected_at` has a descending index. ML models are owned by the background worker
-(`webapp/processing.py::_Models`) and load lazily on the first queued report. A reviewer-only
+(`webapp/processing.py::_Models`) and load lazily on the first queued report.
 `GET /trucks/{id}/image/{idx}` streams a stored report photo from storage (within the ~2-day
-window) so telecallers can eyeball uploads in the `/review` queue.
+window) — open to reviewers (telecaller/admin, for `/review` queue triage) and to the
+contributor who submitted the report (bearer token owner match on `reported_by_user_id`, so
+the mobile app can show back what was uploaded); 403 otherwise. Anonymous submissions have no
+owner and can't be fetched back this way.
 
 **`/` groups reports into broker leads; `/review` stays report-level — these are deliberately
 different units.** `webapp/broker_grouping.py::group_broker_rows()` collapses repeat sightings of

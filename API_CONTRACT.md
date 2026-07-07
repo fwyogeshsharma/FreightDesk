@@ -197,6 +197,31 @@ curl http://localhost:8000/api/trucks/124        # read processing_status, then 
 
 ---
 
+## Viewing the uploaded photo back
+
+`GET /api/trucks/{id}` never includes the photo bytes or a URL — only extracted text fields.
+To show the user what they uploaded (e.g. an upload-confirmation screen or submission
+history), fetch each photo separately:
+
+```
+GET /trucks/{id}/image/{idx}
+```
+
+- `idx` is 0-based, up to `images_accepted - 1` for that report.
+- **Requires** `Authorization: Bearer <token>`, and the token must belong to the account
+  that submitted the report (`reported_by_user_id` on the record) — so log the user in and
+  send the same token used for the report POST. Anonymous submissions have no owner and
+  can't be fetched back this way.
+- Returns the raw image bytes (`Content-Type: image/jpeg` or similar). `403` if the token
+  doesn't own the report, `404` if the photo has already been auto-deleted (~2-day window)
+  or `idx` is out of range.
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/trucks/124/image/0 --output photo0.jpg
+```
+
+---
+
 ## Tips for the mobile dev
 - Send each photo as a separate `images` part (don't zip or base64 them).
 - Treat `202` as "received & queued" — immediately move the user off the upload screen; don't
