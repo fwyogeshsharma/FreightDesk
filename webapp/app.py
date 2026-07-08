@@ -37,7 +37,9 @@ from sqlalchemy import distinct, func, or_, select
 
 from pipeline import auth
 from pipeline.db import SourceType, Truck, User, get_session_factory, init_db
-from webapp.broker_grouping import find_lead_members, group_broker_rows, lead_phone, lead_plate
+from webapp.broker_grouping import (
+    find_lead_members, group_broker_rows, lead_phone, lead_plate, lead_trust,
+)
 
 _HERE = Path(__file__).parent
 
@@ -688,10 +690,13 @@ def _sort_leads(leads: list, sort: str, descending: bool) -> list:
     return with_val + without_val
 
 
+_TRUST_FILTERS = {"auto_verified", "verified", "pending", "rejected"}
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, q: Optional[str] = None, source: Optional[str] = None,
           vtype: Optional[str] = None, loc: Optional[str] = None,
-          verified: str = "all", sort: str = "seen", dir: str = "desc",
+          verified: str = "all", trust: str = "all", sort: str = "seen", dir: str = "desc",
           fresh: str = "all", page: int = Query(1, ge=1)):
     from urllib.parse import urlencode
     sort = sort if sort in _LEAD_SORT_FIELDS else "seen"
@@ -699,6 +704,7 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
     cutoff = _fresh_cutoff(fresh)  # None for "all" (default — most data is historical)
     fresh = fresh if fresh in _FRESH_WINDOWS else "all"
     verified = "verified" if verified == "verified" else "all"
+    trust = trust if trust in _TRUST_FILTERS else "all"
 
     def _filtered(stmt):
         stmt = _apply_search(stmt, q, source)
@@ -740,7 +746,10 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
         d["fresh"] = _fresh_bucket(r.detected_at)
         reports.append(d)
 
-    leads = _sort_leads(group_broker_rows(reports), sort, descending)
+    leads = group_broker_rows(reports)
+    if trust != "all":
+        leads = [ld for ld in leads if lead_trust(ld) == trust]
+    leads = _sort_leads(leads, sort, descending)
     total = len(leads)  # leads, not raw reports — the correct unit once grouped
     pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(page, pages)
@@ -749,14 +758,15 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
     show_load = any(t["loaded_status"] or t.get("body_type") for t in trucks)
     show_location = any((t.get("location") or t.get("city")) for t in trucks)
     active_filters = sum(bool(x) for x in (q, source, vtype, loc)) \
-        + (fresh != "all") + (verified != "all")
+        + (fresh != "all") + (verified != "all") + (trust != "all")
     # Filters only (no sort/page) — used to build sort/pagination links cleanly.
     base_qs = urlencode({"q": q or "", "source": source or "", "vtype": vtype or "",
-                         "loc": loc or "", "fresh": fresh, "verified": verified})
+                         "loc": loc or "", "fresh": fresh, "verified": verified,
+                         "trust": trust})
 
     return templates.TemplateResponse(request=request, name="index.html", context={
         "trucks": trucks, "q": q or "", "source": source or "",
-        "vtype": vtype or "", "loc": loc or "", "verified": verified,
+        "vtype": vtype or "", "loc": loc or "", "verified": verified, "trust": trust,
         "types": types, "cities": cities, "active_filters": active_filters,
         "base_qs": base_qs,
         "sort": sort, "dir": "asc" if not descending else "desc", "fresh": fresh,

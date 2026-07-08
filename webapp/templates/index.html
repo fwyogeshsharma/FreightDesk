@@ -91,6 +91,13 @@
           <option value="7d" {% if fresh=='7d' %}selected{% endif %}>Last 7 days</option>
           <option value="30d" {% if fresh=='30d' %}selected{% endif %}>Last 30 days</option>
         </select>
+        <select name="trust" title="Trust" class="{{ ghost }}">
+          <option value="all" {% if trust=='all' %}selected{% endif %}>All trust levels</option>
+          <option value="auto_verified" {% if trust=='auto_verified' %}selected{% endif %}>Auto Verified</option>
+          <option value="verified" {% if trust=='verified' %}selected{% endif %}>Verified</option>
+          <option value="pending" {% if trust=='pending' %}selected{% endif %}>Pending Review</option>
+          <option value="rejected" {% if trust=='rejected' %}selected{% endif %}>Rejected</option>
+        </select>
         <label class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer select-none transition-colors text-[13px]
                {% if verified=='verified' %}bg-emerald-50 text-emerald-700{% else %}text-slate-500 hover:bg-slate-100{% endif %}">
           <input type="checkbox" name="verified" value="verified" {% if verified=='verified' %}checked{% endif %} class="accent-emerald-600">

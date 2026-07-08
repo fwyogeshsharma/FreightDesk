@@ -149,6 +149,20 @@ def group_broker_rows(trucks: list) -> list:
     return leads
 
 
+def lead_trust(lead: dict) -> str:
+    """The Trust badge category a lead renders as on the broker page — one of
+    'auto_verified' / 'verified' / 'pending' / 'rejected'. Mirrors index.html's
+    Trust column conditionals exactly, so it can be used as a filter that always
+    matches what's actually displayed."""
+    if lead.get("source") != "image_api":
+        return "auto_verified"
+    if lead.get("review_status") == "PASSED":
+        return "verified"
+    if lead.get("review_status") == "REJECTED":
+        return "rejected"
+    return "pending"
+
+
 def find_lead_members(candidates: list, representative_id) -> list:
     """Given a broader candidate pool (e.g. every truck sharing the clicked
     row's phone, fetched independently by the caller — see truck_panel()),
