@@ -98,11 +98,6 @@
           <option value="pending" {% if trust=='pending' %}selected{% endif %}>Pending Review</option>
           <option value="rejected" {% if trust=='rejected' %}selected{% endif %}>Rejected</option>
         </select>
-        <label class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer select-none transition-colors text-[13px]
-               {% if verified=='verified' %}bg-emerald-50 text-emerald-700{% else %}text-slate-500 hover:bg-slate-100{% endif %}">
-          <input type="checkbox" name="verified" value="verified" {% if verified=='verified' %}checked{% endif %} class="accent-emerald-600">
-          Verified only
-        </label>
 
         {% if active_filters %}
           <a href="/" class="ml-auto text-xs text-slate-400 hover:text-red-600 underline">Clear {{ active_filters }} filter{{ 's' if active_filters > 1 else '' }}</a>

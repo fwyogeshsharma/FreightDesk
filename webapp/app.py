@@ -698,14 +698,13 @@ _TRUST_FILTERS = {"auto_verified", "verified", "pending", "rejected"}
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, q: Optional[str] = None, source: Optional[str] = None,
           vtype: Optional[str] = None, loc: Optional[str] = None,
-          verified: str = "all", trust: str = "all", sort: str = "seen", dir: str = "desc",
+          trust: str = "all", sort: str = "seen", dir: str = "desc",
           fresh: str = "all", page: int = Query(1, ge=1)):
     from urllib.parse import urlencode
     sort = sort if sort in _LEAD_SORT_FIELDS else "seen"
     descending = dir != "asc"
     cutoff = _fresh_cutoff(fresh)  # None for "all" (default — most data is historical)
     fresh = fresh if fresh in _FRESH_WINDOWS else "all"
-    verified = "verified" if verified == "verified" else "all"
     trust = trust if trust in _TRUST_FILTERS else "all"
 
     def _filtered(stmt):
@@ -716,9 +715,6 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
             stmt = stmt.where(Truck.vehicle_type == vtype)
         if loc:
             stmt = stmt.where(or_(Truck.city.ilike(loc), Truck.location.ilike(loc)))
-        if verified == "verified":
-            stmt = stmt.where(or_(Truck.verification_status == "VERIFIED",
-                                  Truck.review_status == "PASSED"))
         return stmt
 
     user = get_current_user(request)  # drives the shared nav (tabs + login/logout)
@@ -760,15 +756,14 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
     show_load = any(t["loaded_status"] or t.get("body_type") or t.get("material_type") for t in trucks)
     show_location = any((t.get("location") or t.get("city")) for t in trucks)
     active_filters = sum(bool(x) for x in (q, source, vtype, loc)) \
-        + (fresh != "all") + (verified != "all") + (trust != "all")
+        + (fresh != "all") + (trust != "all")
     # Filters only (no sort/page) — used to build sort/pagination links cleanly.
     base_qs = urlencode({"q": q or "", "source": source or "", "vtype": vtype or "",
-                         "loc": loc or "", "fresh": fresh, "verified": verified,
-                         "trust": trust})
+                         "loc": loc or "", "fresh": fresh, "trust": trust})
 
     return templates.TemplateResponse(request=request, name="index.html", context={
         "trucks": trucks, "q": q or "", "source": source or "",
-        "vtype": vtype or "", "loc": loc or "", "verified": verified, "trust": trust,
+        "vtype": vtype or "", "loc": loc or "", "trust": trust,
         "types": types, "cities": cities, "active_filters": active_filters,
         "base_qs": base_qs,
         "sort": sort, "dir": "asc" if not descending else "desc", "fresh": fresh,
