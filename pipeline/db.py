@@ -67,6 +67,10 @@ class Truck(Base):
     # User-chosen from a fixed set of options in the Android app (e.g. "Container");
     # stored verbatim as sent — no server-side enum, the app owns the choice list.
     body_type: Mapped[Optional[str]] = mapped_column(String(32))
+    # What cargo the truck carries/is suited for (e.g. "Steel", "Grains", "Cement",
+    # "FMCG", "Perishables") — same convention as body_type: user-chosen free text,
+    # no server-side enum. Lets a telecaller factor cargo fit into pass/reject.
+    material_type: Mapped[Optional[str]] = mapped_column(String(64))
     location: Mapped[Optional[str]] = mapped_column(String(255))       # address / place text
     latitude: Mapped[Optional[float]] = mapped_column(Float)
     longitude: Mapped[Optional[float]] = mapped_column(Float)
@@ -136,6 +140,7 @@ class Truck(Base):
             "last_seen_sec": self.last_seen_sec,
             "loaded_status": self.loaded_status,
             "body_type": self.body_type,
+            "material_type": self.material_type,
             "location": self.location,
             "latitude": self.latitude,
             "longitude": self.longitude,

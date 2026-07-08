@@ -193,6 +193,7 @@
                     {% if t.loaded_status %}<span>{{ '📦' if t.loaded_status=='LOADED' else '⬜' }} {{ t.loaded_status|title }}</span>{% endif %}
                     {% if t.num_wheels %}<span>🛞 {{ t.num_wheels }}</span>{% endif %}
                     {% if t.body_type %}<span>🚛 {{ t.body_type }}</span>{% endif %}
+                    {% if t.material_type %}<span title="Material carried">🏷️ {{ t.material_type }}</span>{% endif %}
                     {% if t.location %}<span>🗺️ {{ t.location }}</span>{% endif %}
                     {% if t.latitude and t.longitude %}
                       <a href="https://www.google.com/maps?q={{ t.latitude }},{{ t.longitude }}" target="_blank"
@@ -206,7 +207,7 @@
                         via {{ t.reported_by }}
                       </span>
                     {% endif %}
-                    {% if not t.company_name and not t.loaded_status and not t.num_wheels and not t.body_type and not t.location and not t.reported_by %}
+                    {% if not t.company_name and not t.loaded_status and not t.num_wheels and not t.body_type and not t.material_type and not t.location and not t.reported_by %}
                       <span class="text-slate-300">—</span>
                     {% endif %}
                   </div>

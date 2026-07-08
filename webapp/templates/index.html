@@ -166,7 +166,7 @@
                 <th class="font-semibold px-4 py-3 text-emerald-700">📞 Call</th>
                 {{ sortth('type', 'Type', 'hidden lg:table-cell') }}
                 {% if show_location %}<th class="font-semibold px-4 py-3 hidden lg:table-cell">Location</th>{% endif %}
-                {% if show_load %}<th class="font-semibold px-4 py-3 hidden xl:table-cell">Load / Body</th>{% endif %}
+                {% if show_load %}<th class="font-semibold px-4 py-3 hidden xl:table-cell">Load / Body / Material</th>{% endif %}
                 <th class="font-semibold px-4 py-3">Trust</th>
                 {{ sortth('seen', 'Seen', 'text-right') }}
                 {{ sortth('source', 'Source', 'text-right') }}
@@ -252,7 +252,8 @@
                       <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">Empty</span>
                     {% endif %}
                     {% if t.body_type %}<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">{{ t.body_type }}</span>{% endif %}
-                    {% if not t.loaded_status and not t.body_type %}<span class="text-slate-300">—</span>{% endif %}
+                    {% if t.material_type %}<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200" title="Material carried">{{ t.material_type }}</span>{% endif %}
+                    {% if not t.loaded_status and not t.body_type and not t.material_type %}<span class="text-slate-300">—</span>{% endif %}
                   </div>
                 </td>
                 {% endif %}

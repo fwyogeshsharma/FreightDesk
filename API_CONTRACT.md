@@ -67,6 +67,7 @@ curl -X POST http://localhost:8000/api/trucks/report \
 | `vehicle_number` | string | optional | Number plate the user read, e.g. `RJ14CA1234`. |
 | `loaded_status` | string | optional | `loaded` or `unloaded`. |
 | `body_type` | string | optional | One of the app's fixed body-type options, e.g. `Container`. Stored verbatim — the app owns the choice list, the server does not validate it against an enum. |
+| `material_type` | string | optional | What cargo the truck carries/is suited for, e.g. `Steel`, `Grains`, `Cement`. Free text, stored verbatim like `body_type` — helps a telecaller judge cargo fit when reviewing. |
 | `number_of_wheels` | integer | optional | e.g. `12`. |
 | `location` | string | optional | Address / place text, e.g. `NH-48, Jaipur`. |
 | `latitude` | float | optional | GPS, e.g. `26.9124`. |
@@ -83,6 +84,7 @@ curl -X POST http://localhost:8000/api/trucks/report \
   -F "vehicle_number=RJ14CA1234" \
   -F "loaded_status=loaded" \
   -F "body_type=Container" \
+  -F "material_type=Steel" \
   -F "number_of_wheels=12" \
   -F "location=NH-48, Jaipur" \
   -F "latitude=26.9124" \

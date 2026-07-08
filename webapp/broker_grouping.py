@@ -24,7 +24,7 @@ _MIN_RELIABLE_PLATE_LEN = 6
 # "prefer the latest non-empty useful value in the group" from the spec.
 _BACKFILL_FIELDS = (
     "license_plate", "company_name", "vehicle_type", "location", "city",
-    "loaded_status", "body_type", "other_text",
+    "loaded_status", "body_type", "material_type", "other_text",
 )
 
 
