@@ -16,11 +16,12 @@ echo "==> build web image"
 sudo docker-compose build web
 
 echo "==> apply migrations (idempotent, safe to re-run)"
-for script in scripts/init_db.py \
-              scripts/migrate_report_fields.py \
-              scripts/migrate_user_accounts.py \
-              scripts/migrate_async_processing.py \
-              scripts/migrate_body_type.py; do
+# init_db.py first (creates the table if missing), then every scripts/migrate_*.py
+# by filename — auto-discovered so a newly-added migration is never silently
+# skipped just because this list wasn't updated (that caused a prod outage once).
+echo "  -> scripts/init_db.py"
+sudo docker-compose run --rm web python scripts/init_db.py
+for script in scripts/migrate_*.py; do
   echo "  -> $script"
   sudo docker-compose run --rm web python "$script"
 done

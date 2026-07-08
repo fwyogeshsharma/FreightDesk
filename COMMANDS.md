@@ -28,7 +28,11 @@ Create / upgrade the local database schema (from the project folder):
 .venv\Scripts\python.exe scripts\init_db.py
 .venv\Scripts\python.exe scripts\migrate_report_fields.py
 .venv\Scripts\python.exe scripts\migrate_user_accounts.py
+.venv\Scripts\python.exe scripts\migrate_async_processing.py
+.venv\Scripts\python.exe scripts\migrate_body_type.py
+.venv\Scripts\python.exe scripts\migrate_material_type.py
 ```
+(Or run every `scripts\migrate_*.py` file present — new ones are added occasionally.)
 Process a video locally (into the local DB):
 ```bat
 run.bat --input videos --sink db          :: whole videos\ folder
@@ -61,12 +65,12 @@ git pull
 sudo docker-compose build web                                             # bake in new code FIRST —
                                                                             # migration scripts live inside the image
 sudo docker-compose run --rm web python scripts/init_db.py
-sudo docker-compose run --rm web python scripts/migrate_report_fields.py
-sudo docker-compose run --rm web python scripts/migrate_user_accounts.py
-sudo docker-compose run --rm web python scripts/migrate_async_processing.py
-sudo docker-compose run --rm web python scripts/migrate_body_type.py
+for f in scripts/migrate_*.py; do sudo docker-compose run --rm web python "$f"; done
 sudo docker-compose up -d                                                 # restart with the new image
 ```
+`deploy.sh` auto-discovers every `scripts/migrate_*.py` (not a hardcoded list) specifically so a
+newly-added migration is never silently skipped — that gap once shipped code expecting a column
+that was never added to prod. Do the same by hand here rather than naming scripts individually.
 </details>
 
 ---
