@@ -23,6 +23,11 @@ pydantic-settings
 # plain files and needs nothing extra.
 google-cloud-storage
 
+# Reverse geocoding fallback (pipeline/geocode.py) when a mobile report has GPS
+# coordinates but no typed address. Already pulled in transitively by ultralytics,
+# but pinned explicitly since we now import it directly.
+requests
+
 # PaddleOCR (higher accuracy) — not yet available for Python 3.14
 # Install when PaddleOCR adds Python 3.14 support:
 #   pip install paddlepaddle paddleocr

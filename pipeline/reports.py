@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Optional
 
 from .extract import _extract_phones, _levenshtein
+from .geocode import reverse_geocode
 
 # Tight normalization for plate comparison: letters+digits only, uppercased.
 _ALNUM = re.compile(r'[^A-Z0-9]')
@@ -177,6 +178,12 @@ def reconcile(reported: dict, ocr: dict, config) -> dict:
     material_type = (reported.get("material_type") or "").strip() or None
     driver_name = (reported.get("driver_name") or "").strip() or None
     axle_type = (reported.get("axle_type") or "").strip() or None
+    # Some Android builds send only GPS coordinates, not a typed address — fall
+    # back to reverse geocoding the coordinates so the broker still sees a place
+    # name instead of a blank Location column.
+    location = (reported.get("location") or "").strip() or None
+    if not location:
+        location = reverse_geocode(reported.get("latitude"), reported.get("longitude"))
 
     return {
         "detected_at":      _parse_dt(reported.get("captured_at")),
@@ -195,7 +202,7 @@ def reconcile(reported: dict, ocr: dict, config) -> dict:
         "body_type":        body_type,
         "material_type":    material_type,
         "driver_name":      driver_name,
-        "location":         (reported.get("location") or "").strip() or None,
+        "location":         location,
         "latitude":         reported.get("latitude"),
         "longitude":        reported.get("longitude"),
         "num_wheels":       reported.get("number_of_wheels"),
