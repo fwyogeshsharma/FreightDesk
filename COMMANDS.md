@@ -31,6 +31,7 @@ Create / upgrade the local database schema (from the project folder):
 .venv\Scripts\python.exe scripts\migrate_async_processing.py
 .venv\Scripts\python.exe scripts\migrate_body_type.py
 .venv\Scripts\python.exe scripts\migrate_material_type.py
+.venv\Scripts\python.exe scripts\migrate_driver_axle.py
 ```
 (Or run every `scripts\migrate_*.py` file present — new ones are added occasionally.)
 Process a video locally (into the local DB):

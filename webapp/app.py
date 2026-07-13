@@ -226,9 +226,11 @@ def _time_ago(dt: Optional[datetime]) -> str:
     if not dt:
         return ""
     now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.now()
-    secs = (now - dt).total_seconds()
-    if secs < 0:
-        return dt.strftime("%Y-%m-%d %H:%M")
+    # A few seconds "in the future" happens on essentially every fresh report (clock
+    # skew between the reporting device and this server) — clamp to 0 so it reads
+    # "just now" like any other brand-new row, instead of falling back to a raw
+    # absolute timestamp that looks like a different column format.
+    secs = max(0.0, (now - dt).total_seconds())
     for unit, n in (("d", 86400), ("h", 3600), ("m", 60)):
         if secs >= n:
             return f"{int(secs // n)}{unit} ago"
@@ -317,7 +319,9 @@ async def report(
     loaded_status: Optional[str] = Form(None),
     body_type: Optional[str] = Form(None),
     material_type: Optional[str] = Form(None),
+    driver_name: Optional[str] = Form(None),
     number_of_wheels: Optional[int] = Form(None),
+    axle_type: Optional[str] = Form(None),
     location: Optional[str] = Form(None),
     latitude: Optional[float] = Form(None),
     longitude: Optional[float] = Form(None),
@@ -369,8 +373,8 @@ async def report(
     reported = {
         "vehicle_number": vehicle_number, "phone_number": phone_number,
         "loaded_status": loaded_status, "body_type": body_type,
-        "material_type": material_type,
-        "number_of_wheels": number_of_wheels,
+        "material_type": material_type, "driver_name": driver_name,
+        "number_of_wheels": number_of_wheels, "axle_type": axle_type,
         "location": location, "latitude": latitude, "longitude": longitude,
         "captured_at": captured_at, "reported_by": reported_by,
     }

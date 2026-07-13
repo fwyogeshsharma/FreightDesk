@@ -71,10 +71,16 @@ class Truck(Base):
     # "FMCG", "Perishables") — same convention as body_type: user-chosen free text,
     # no server-side enum. Lets a telecaller factor cargo fit into pass/reject.
     material_type: Mapped[Optional[str]] = mapped_column(String(64))
+    # Driver's name, as typed by the contributor — lets a broker greet the driver by
+    # name when they call. User-typed free text, no server-side validation.
+    driver_name: Mapped[Optional[str]] = mapped_column(String(128))
     location: Mapped[Optional[str]] = mapped_column(String(255))       # address / place text
     latitude: Mapped[Optional[float]] = mapped_column(Float)
     longitude: Mapped[Optional[float]] = mapped_column(Float)
     num_wheels: Mapped[Optional[int]] = mapped_column(Integer)
+    # Axle configuration (e.g. "2 Axle", "3 Axle", "Multi-Axle") — same convention as
+    # body_type: user-chosen free text, no server-side enum.
+    axle_type: Mapped[Optional[str]] = mapped_column(String(32))
     # Phone provenance: what the reporter typed vs what OCR read; phone_number = merged.
     phone_reported: Mapped[Optional[str]] = mapped_column(String(64))
     phone_ocr: Mapped[Optional[str]] = mapped_column(String(128))
@@ -141,10 +147,12 @@ class Truck(Base):
             "loaded_status": self.loaded_status,
             "body_type": self.body_type,
             "material_type": self.material_type,
+            "driver_name": self.driver_name,
             "location": self.location,
             "latitude": self.latitude,
             "longitude": self.longitude,
             "num_wheels": self.num_wheels,
+            "axle_type": self.axle_type,
             "phone_reported": self.phone_reported,
             "phone_ocr": self.phone_ocr,
             "reported_by": self.reported_by,

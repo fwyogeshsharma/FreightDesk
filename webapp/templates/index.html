@@ -161,16 +161,16 @@
                 <th class="font-semibold px-4 py-3 text-emerald-700">📞 Call</th>
                 {{ sortth('type', 'Type', 'hidden lg:table-cell') }}
                 {% if show_location %}<th class="font-semibold px-4 py-3 hidden lg:table-cell">Location</th>{% endif %}
-                {% if show_load %}<th class="font-semibold px-4 py-3 hidden xl:table-cell">Load / Body / Material</th>{% endif %}
+                {% if show_load %}<th class="font-semibold px-4 py-3 hidden xl:table-cell whitespace-nowrap" title="Load status / Body type / Material carried">Cargo</th>{% endif %}
                 <th class="font-semibold px-4 py-3">Trust</th>
                 {{ sortth('seen', 'Seen', 'text-right') }}
-                {{ sortth('source', 'Source', 'text-right') }}
-                <th class="px-2 py-3"></th>
+                <th class="px-2 py-3 sticky right-0 z-10 bg-slate-50"></th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
               {% for t in trucks %}
-              <tr class="even:bg-slate-50/40 hover:bg-emerald-50/40 transition-colors align-middle"
+              {% set zebra = 'bg-slate-50/40' if loop.index0 % 2 == 1 else 'bg-white' %}
+              <tr class="group even:bg-slate-50/40 hover:bg-emerald-50/40 transition-colors align-middle"
                   style="animation-delay: {{ '%.3f'|format(loop.index0 * 0.022) }}s">
                 <!-- Vehicle / plate (with recency dot) — the ONE primary grouped-lead cue lives here -->
                 <td class="px-4 py-3.5">
@@ -202,24 +202,26 @@
                 </td>
                 <!-- Call (hero) -->
                 <td class="px-4 py-3.5 whitespace-nowrap">
+                  {% if t.driver_name %}
+                    <div class="text-[11px] text-slate-400 mb-0.5" title="Driver name">👤 {{ t.driver_name }}</div>
+                  {% endif %}
                   {% set phones = t.phone_number | phones %}
                   {% if phones %}
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-1">
                       <a href="tel:{{ phones[0].e164 }}"
-                         class="group/call inline-flex items-center gap-2 font-mono text-[15px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200 rounded-lg px-3 py-1.5 min-h-[38px] transition-colors">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
+                         class="group/call inline-flex items-center gap-1.5 font-mono text-[13px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 active:bg-emerald-200 border border-emerald-200 rounded-lg px-2.5 py-1 min-h-[32px] transition-colors">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
                         {{ phones[0].pretty }}
                       </a>
                       <button type="button" data-phone="{{ phones[0].raw }}" onclick="copyPhone(this)"
                               class="text-slate-300 hover:text-slate-700 transition-colors" title="Copy number">
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
                       </button>
                       {% if phones|length > 1 %}
                         <button type="button" data-phones='{{ phones[1:] | tojson }}' onclick="togglePhones(event, this)"
-                                class="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400 hover:text-slate-600 border border-slate-200 hover:border-slate-300 rounded px-1.5 py-0.5 transition-colors"
-                                title="Show all numbers">
-                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92Z"/></svg>
-                          +{{ phones|length - 1 }} phone{{ 's' if phones|length > 2 else '' }}
+                                class="shrink-0 inline-flex items-center justify-center text-[10px] font-semibold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-full w-5 h-5 transition-colors"
+                                title="{{ phones|length - 1 }} more number{{ 's' if phones|length > 2 else '' }}">
+                          +{{ phones|length - 1 }}
                         </button>
                       {% endif %}
                     </div>
@@ -229,6 +231,7 @@
                 <td class="px-4 py-3.5 whitespace-nowrap hidden lg:table-cell">
                   {% if t.vehicle_type %}<span class="text-slate-500">{{ t.vehicle_type }}</span>
                   {% else %}<span class="text-slate-300">—</span>{% endif %}
+                  {% if t.axle_type %}<div class="text-xs text-slate-400" title="Axle configuration">{{ t.axle_type }}</div>{% endif %}
                 </td>
                 <!-- Location -->
                 {% if show_location %}
@@ -240,14 +243,11 @@
                 <!-- Load -->
                 {% if show_load %}
                 <td class="px-4 py-3.5 hidden xl:table-cell">
-                  <div class="flex items-center gap-1.5">
-                    {% if t.loaded_status=='LOADED' %}
-                      <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">Loaded</span>
-                    {% elif t.loaded_status=='UNLOADED' %}
-                      <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">Empty</span>
-                    {% endif %}
-                    {% if t.body_type %}<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">{{ t.body_type }}</span>{% endif %}
-                    {% if t.material_type %}<span class="text-xs font-medium px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200" title="Material carried">{{ t.material_type }}</span>{% endif %}
+                  <div class="flex flex-col gap-0.5 text-xs leading-tight">
+                    {% if t.loaded_status=='LOADED' %}<span class="text-indigo-600 font-medium">Loaded</span>
+                    {% elif t.loaded_status=='UNLOADED' %}<span class="text-slate-400">Empty</span>{% endif %}
+                    {% if t.body_type %}<span class="text-amber-700 font-medium">{{ t.body_type }}</span>{% endif %}
+                    {% if t.material_type %}<span class="text-sky-700 font-medium" title="Material carried">{{ t.material_type }}</span>{% endif %}
                     {% if not t.loaded_status and not t.body_type and not t.material_type %}<span class="text-slate-300">—</span>{% endif %}
                   </div>
                 </td>
@@ -272,18 +272,20 @@
                       <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Pending Review</span>
                   {% endif %}
                 </td>
-                <!-- Seen -->
-                <td class="px-4 py-3.5 whitespace-nowrap text-right text-slate-600 font-medium tnum" title="{{ t.detected_at_human }}">{{ t.time_ago }}</td>
-                <!-- Source: quiet label, not a competing accent — slightly stronger contrast for legibility -->
-                <td class="px-4 py-3.5 whitespace-nowrap text-right">
-                  <span class="text-[11px] font-medium uppercase tracking-wide text-slate-500 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">
-                    {% if t.source=='image_api' %}Report{% elif t.source=='stream' %}Stream{% else %}Video{% endif %}
-                  </span>
+                <!-- Seen (+ Source folded in as a small tag, freeing a whole column) -->
+                <td class="px-4 py-3.5 whitespace-nowrap text-right" title="{{ t.detected_at_human }}">
+                  <div class="flex items-center justify-end gap-2">
+                    <span class="text-[10px] font-medium uppercase tracking-wide text-slate-400 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">
+                      {% if t.source=='image_api' %}Report{% elif t.source=='stream' %}Stream{% else %}Video{% endif %}
+                    </span>
+                    <span class="text-slate-600 font-medium tnum">{{ t.time_ago }}</span>
+                  </div>
                 </td>
-                <!-- Details affordance — the single entry point into the detail drawer.
-                     For grouped rows, the tooltip says so explicitly: the sightings badge
-                     is informational only, this chevron is where the history actually lives. -->
-                <td class="px-2 py-3.5 text-right">
+                <!-- Details affordance — the single entry point into the detail drawer. Pinned to the
+                     right edge so it's always reachable without horizontal scrolling. For grouped rows,
+                     the tooltip says so explicitly: the sightings badge is informational only, this
+                     chevron is where the history actually lives. -->
+                <td class="px-2 py-3.5 text-right sticky right-0 {{ zebra }} group-hover:bg-emerald-50/40 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.08)]">
                   {% set details_label = ('View lead details & sighting history (' ~ t.group_count ~ ')') if (t.group_count and t.group_count > 1) else 'View details' %}
                   <button type="button" title="{{ details_label }}" aria-label="{{ details_label }}"
                           hx-get="/trucks/{{ t.id }}/panel" hx-target="#detail-body" hx-swap="innerHTML"

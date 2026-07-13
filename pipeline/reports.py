@@ -175,6 +175,8 @@ def reconcile(reported: dict, ocr: dict, config) -> dict:
     # no server-side enum (the app, not the backend, owns the choice list).
     body_type = (reported.get("body_type") or "").strip() or None
     material_type = (reported.get("material_type") or "").strip() or None
+    driver_name = (reported.get("driver_name") or "").strip() or None
+    axle_type = (reported.get("axle_type") or "").strip() or None
 
     return {
         "detected_at":      _parse_dt(reported.get("captured_at")),
@@ -192,10 +194,12 @@ def reconcile(reported: dict, ocr: dict, config) -> dict:
         "loaded_status":    loaded_status,
         "body_type":        body_type,
         "material_type":    material_type,
+        "driver_name":      driver_name,
         "location":         (reported.get("location") or "").strip() or None,
         "latitude":         reported.get("latitude"),
         "longitude":        reported.get("longitude"),
         "num_wheels":       reported.get("number_of_wheels"),
+        "axle_type":        axle_type,
         "reported_by":      (reported.get("reported_by") or "").strip() or None,
         # Reporter identity snapshot (set when the contributor was logged in).
         "reported_by_user_id": reported.get("reported_by_user_id"),

@@ -166,6 +166,9 @@
                 </td>
                 <!-- MIDDLE ZONE: phone + company + load/location + wheels/body type + reporter -->
                 <td class="px-4 py-2.5 border-l border-slate-100">
+                  {% if t.driver_name %}
+                    <div class="text-[11px] text-slate-500 mb-1" title="Driver name">👤 {{ t.driver_name }}</div>
+                  {% endif %}
                   {% set phones = t.phone_number | phones %}
                   <div class="flex items-center gap-1.5 flex-wrap">
                     {% if phones %}
@@ -194,6 +197,7 @@
                     {% if t.num_wheels %}<span>🛞 {{ t.num_wheels }}</span>{% endif %}
                     {% if t.body_type %}<span>🚛 {{ t.body_type }}</span>{% endif %}
                     {% if t.material_type %}<span title="Material carried">🏷️ {{ t.material_type }}</span>{% endif %}
+                    {% if t.axle_type %}<span title="Axle configuration">⚙️ {{ t.axle_type }}</span>{% endif %}
                     {% if t.location %}<span>🗺️ {{ t.location }}</span>{% endif %}
                     {% if t.latitude and t.longitude %}
                       <a href="https://www.google.com/maps?q={{ t.latitude }},{{ t.longitude }}" target="_blank"
@@ -207,7 +211,7 @@
                         via {{ t.reported_by }}
                       </span>
                     {% endif %}
-                    {% if not t.company_name and not t.loaded_status and not t.num_wheels and not t.body_type and not t.material_type and not t.location and not t.reported_by %}
+                    {% if not t.company_name and not t.loaded_status and not t.num_wheels and not t.body_type and not t.material_type and not t.axle_type and not t.location and not t.reported_by %}
                       <span class="text-slate-300">—</span>
                     {% endif %}
                   </div>

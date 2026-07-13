@@ -31,6 +31,7 @@
   <!-- Call -->
   <div class="mb-4">
     <div class="text-[11px] uppercase tracking-wider text-slate-400 mb-2">Contact</div>
+    {% if t.driver_name %}<div class="text-sm text-slate-600 mb-2">👤 {{ t.driver_name }}</div>{% endif %}
     {% if phones %}
       <div class="flex flex-col gap-2">
         {% for ph in phones %}
@@ -61,6 +62,7 @@
     {{ field('Body type', t.body_type) }}
     {{ field('Material', t.material_type) }}
     {{ field('Wheels', t.num_wheels) }}
+    {{ field('Axle', t.axle_type) }}
     {{ field('Source', 'Field report' if t.source=='image_api' else t.source|title) }}
     {{ field('Seen', t.detected_at_human ~ '  (' ~ t.time_ago ~ ')') }}
     {% if t.latitude and t.longitude %}
@@ -112,6 +114,7 @@
           {% if h.location or h.city %}<span>📍 {{ h.location or h.city }}</span>{% endif %}
           {% if h.loaded_status %}<span>{{ 'Loaded' if h.loaded_status=='LOADED' else 'Empty' }}</span>{% endif %}
           {% if h.body_type %}<span>🚛 {{ h.body_type }}</span>{% endif %}
+          {% if h.axle_type %}<span>⚙️ {{ h.axle_type }}</span>{% endif %}
           {% if h.vehicle_type %}<span>{{ h.vehicle_type }}</span>{% endif %}
           {% if h.phone_number and h.phone_number != t.phone_number %}<span class="font-mono">{{ h.phone_number }}</span>{% endif %}
         </div>

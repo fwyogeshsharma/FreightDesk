@@ -68,7 +68,9 @@ curl -X POST http://localhost:8000/api/trucks/report \
 | `loaded_status` | string | optional | `loaded` or `unloaded`. |
 | `body_type` | string | optional | One of the app's fixed body-type options, e.g. `Container`. Stored verbatim — the app owns the choice list, the server does not validate it against an enum. |
 | `material_type` | string | optional | What cargo the truck carries/is suited for, e.g. `Steel`, `Grains`, `Cement`. Free text, stored verbatim like `body_type` — helps a telecaller judge cargo fit when reviewing. |
+| `driver_name` | string | optional | Driver's name, as told to the reporter — lets the broker greet the driver by name when they call. Free text. |
 | `number_of_wheels` | integer | optional | e.g. `12`. |
+| `axle_type` | string | optional | Axle configuration, e.g. `2 Axle`, `3 Axle`, `Multi-Axle`. Free text, stored verbatim like `body_type`. |
 | `location` | string | optional | Address / place text, e.g. `NH-48, Jaipur`. |
 | `latitude` | float | optional | GPS, e.g. `26.9124`. |
 | `longitude` | float | optional | GPS, e.g. `75.7873`. |
@@ -85,7 +87,9 @@ curl -X POST http://localhost:8000/api/trucks/report \
   -F "loaded_status=loaded" \
   -F "body_type=Container" \
   -F "material_type=Steel" \
+  -F "driver_name=Ramesh Kumar" \
   -F "number_of_wheels=12" \
+  -F "axle_type=3 Axle" \
   -F "location=NH-48, Jaipur" \
   -F "latitude=26.9124" \
   -F "longitude=75.7873" \
