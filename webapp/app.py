@@ -757,8 +757,12 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
     page = min(page, pages)
     trucks = leads[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]
 
-    show_load = any(t["loaded_status"] or t.get("body_type") or t.get("material_type") for t in trucks)
-    show_location = any((t.get("location") or t.get("city")) for t in trucks)
+    # Computed over the full filtered set (leads), not just this page's slice — otherwise
+    # the column flickers in/out depending on which 15 rows land on the current page (e.g.
+    # newest-first can put a run of video/stream sightings, which never carry location,
+    # on page 1 even though plenty of field reports further back do).
+    show_load = any(ld["loaded_status"] or ld.get("body_type") or ld.get("material_type") for ld in leads)
+    show_location = any((ld.get("location") or ld.get("city")) for ld in leads)
     active_filters = sum(bool(x) for x in (q, source, vtype, loc)) \
         + (fresh != "all") + (trust != "all")
     # Filters only (no sort/page) — used to build sort/pagination links cleanly.
