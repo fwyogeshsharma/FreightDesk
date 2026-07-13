@@ -675,12 +675,6 @@ _LEAD_SORT_FIELDS = {
     "source": "source",
 }
 
-# Grouping needs the whole filtered result set in hand before it can cluster and
-# paginate, so the SQL query no longer LIMITs to one page — it fetches up to this
-# many of the most recent matches instead. Comfortably above this app's current
-# scale; revisit (e.g. a materialized lead id) if the table grows much larger.
-_GROUPING_FETCH_CAP = 5000
-
 
 def _sort_leads(leads: list, sort: str, descending: bool) -> list:
     field = _LEAD_SORT_FIELDS.get(sort, "detected_at")
@@ -730,8 +724,7 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
         # broker_grouping.py) needs the whole filtered set in hand before it can
         # correctly cluster reports into leads and paginate those leads.
         rows = s.execute(_filtered(select(Truck))
-                         .order_by(Truck.detected_at.desc())
-                         .limit(_GROUPING_FETCH_CAP)).scalars().all()
+                         .order_by(Truck.detected_at.desc())).scalars().all()
         types = [t for (t,) in s.execute(
             select(distinct(Truck.vehicle_type)).where(Truck.vehicle_type.isnot(None))
             .order_by(Truck.vehicle_type)).all()]

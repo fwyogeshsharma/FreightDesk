@@ -28,6 +28,10 @@ google-cloud-storage
 # but pinned explicitly since we now import it directly.
 requests
 
+# Reading .xlsx spreadsheet exports for one-time data migrations
+# (scripts/import_payment_report.py).
+openpyxl
+
 # PaddleOCR (higher accuracy) — not yet available for Python 3.14
 # Install when PaddleOCR adds Python 3.14 support:
 #   pip install paddlepaddle paddleocr

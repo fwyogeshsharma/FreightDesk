@@ -130,9 +130,11 @@ plate whenever that phone maps to more than one plate, to avoid merging genuinel
 trucks that share a contact number like a dispatcher's line) into one row for the broker page.
 `/review` never imports this module — one queue item is always exactly one submitted report, and
 Pass/Reject acts on that report's id. Because grouping must see the whole filtered set before it
-can cluster and paginate, `index()` fetches up to `_GROUPING_FETCH_CAP` matches (no SQL
-`LIMIT/OFFSET`) and groups/sorts/paginates in Python — the one scaling tradeoff to watch as the
-`trucks` table grows. The detail slide-over (`GET /trucks/{id}/panel`) independently re-resolves
+can cluster and paginate, `index()` fetches every matching row (no SQL `LIMIT/OFFSET`, no fetch
+cap) and groups/sorts/paginates in Python — deliberate, since a capped fetch silently drops older
+matches from an unfiltered/broad query as the table grows. Revisit (e.g. a materialized lead id or
+DB-side grouping) if this becomes a real perf bottleneck on the prod VM. The detail slide-over
+(`GET /trucks/{id}/panel`) independently re-resolves
 that truck's full sibling history (via a phone/plate lookup, not the list's current filters) so
 "Sighting history" is always complete regardless of what filter you had applied to find the lead.
 
