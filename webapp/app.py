@@ -628,7 +628,8 @@ def _pending_reports(s) -> int:
 
 @app.get("/review", response_class=HTMLResponse)
 def review(request: Request, review: str = "pending",
-           verification: str = "all", page: int = Query(1, ge=1)):
+           verification: str = "all", loc: Optional[str] = None, q: Optional[str] = None,
+           page: int = Query(1, ge=1)):
     user = get_current_user(request)
     if not _can_review(user):
         return RedirectResponse("/review/login", status_code=303)
@@ -639,6 +640,10 @@ def review(request: Request, review: str = "pending",
             stmt = stmt.where(Truck.review_status == review.upper())
         if verification and verification != "all":
             stmt = stmt.where(Truck.verification_status == verification.upper())
+        if loc:
+            stmt = stmt.where(or_(Truck.city.ilike(loc), Truck.location.ilike(loc)))
+        if q and q.strip():
+            stmt = stmt.where(Truck.license_plate.ilike(f"%{q.strip()}%"))
         return stmt
 
     Session = get_session_factory()
@@ -647,6 +652,12 @@ def review(request: Request, review: str = "pending",
         rows = s.execute(_filt(select(Truck)).order_by(Truck.detected_at.desc())
                          .limit(PAGE_SIZE).offset((page - 1) * PAGE_SIZE)).scalars().all()
         pending_count = _pending_reports(s)
+        # Location dropdown options — scoped to image_api cities only (the only
+        # source this queue ever shows), so it never offers a value with zero results.
+        cities = [c for (c,) in s.execute(
+            select(distinct(Truck.city)).where(
+                Truck.source == SourceType.image_api, Truck.city.isnot(None))
+            .order_by(Truck.city)).all()]
 
     reports = []
     for r in rows:
@@ -658,6 +669,7 @@ def review(request: Request, review: str = "pending",
     pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     return templates.TemplateResponse(request=request, name="review.html", context={
         "reports": reports, "review": review, "verification": verification,
+        "loc": loc or "", "cities": cities, "q": q or "",
         "page": page, "pages": pages, "total": total, "user": _nav_user(user),
         "pending_count": pending_count,
     })

@@ -50,7 +50,7 @@
         <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 hidden sm:inline">Status</span>
         <div class="inline-flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
           {% for v in ['pending','passed','rejected','all'] %}
-            <a href="/review?review={{ v }}&verification={{ verification }}"
+            <a href="/review?review={{ v }}&verification={{ verification }}&loc={{ loc|urlencode }}&q={{ q|urlencode }}"
                class="px-2.5 py-1 rounded-md text-[13px] font-medium transition-colors
                       {{ 'bg-white text-slate-900 shadow-sm' if review==v else 'text-slate-500 hover:text-slate-700' }}">
               {{ v|capitalize }}
@@ -65,7 +65,7 @@
         <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 hidden sm:inline">Verification</span>
         <div class="inline-flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
           {% for v in ['all','verified','unverified'] %}
-            <a href="/review?review={{ review }}&verification={{ v }}"
+            <a href="/review?review={{ review }}&verification={{ v }}&loc={{ loc|urlencode }}&q={{ q|urlencode }}"
                class="px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors
                       {{ 'bg-white text-slate-900 shadow-sm' if verification==v else 'text-slate-500 hover:text-slate-700' }}">
               {{ v|capitalize }}
@@ -73,6 +73,34 @@
           {% endfor %}
         </div>
       </div>
+
+      <div class="h-5 w-px bg-slate-200 hidden sm:block"></div>
+
+      <form method="get" action="/review" class="flex items-center gap-1.5 flex-wrap">
+        <input type="hidden" name="review" value="{{ review }}">
+        <input type="hidden" name="verification" value="{{ verification }}">
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 hidden sm:inline">Vehicle</span>
+        <div class="relative">
+          <svg class="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="text" name="q" value="{{ q }}" placeholder="Vehicle number…" autocomplete="off"
+                 class="w-40 pl-6 pr-2 py-1 rounded-md border border-slate-200 bg-slate-100 text-[13px] text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-marigold-soft">
+        </div>
+
+        <div class="h-5 w-px bg-slate-200 hidden sm:block mx-1"></div>
+
+        <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 hidden sm:inline">Location</span>
+        <select name="loc" onchange="this.form.submit()"
+                class="px-2 py-1 rounded-md border border-slate-200 bg-slate-100 text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-marigold-soft">
+          <option value="" {% if not loc %}selected{% endif %}>All locations</option>
+          {% for ct in cities %}<option value="{{ ct }}" {% if loc==ct %}selected{% endif %}>{{ ct }}</option>{% endfor %}
+        </select>
+        <button type="submit" class="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-white text-[12px] font-medium">Search</button>
+      </form>
+
+      {% if loc or q %}
+        <a href="/review?review={{ review }}&verification={{ verification }}"
+           class="text-xs text-slate-400 hover:text-red-600 underline">Clear filters</a>
+      {% endif %}
     </div>
   </div>
 
@@ -82,9 +110,9 @@
         <div class="text-slate-300 mb-3">
           <svg class="mx-auto" width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 12.5l2.5 2.5L16 10"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>
         </div>
-        {% if review != 'pending' or verification != 'all' %}
+        {% if review != 'pending' or verification != 'all' or loc or q %}
           <p class="text-slate-600 font-medium">No reports match this view.</p>
-          <p class="text-sm text-slate-400 mt-1">Try a different Status or Verification filter above.</p>
+          <p class="text-sm text-slate-400 mt-1">Try a different Status, Verification, Vehicle, or Location filter above.</p>
         {% else %}
           <p class="text-slate-600 font-medium">The queue is empty.</p>
           <p class="text-sm text-slate-400 mt-1">Nothing is waiting on review right now — new field reports will show up here.</p>
@@ -238,10 +266,10 @@
       {% if pages > 1 %}
       <div class="flex items-center justify-center gap-4 mt-6 text-sm">
         {% if page > 1 %}<a class="px-3 py-1.5 bg-white border border-slate-200 rounded-md shadow-sm hover:border-slate-400"
-           href="/review?review={{ review }}&verification={{ verification }}&page={{ page-1 }}">← Prev</a>{% endif %}
+           href="/review?review={{ review }}&verification={{ verification }}&loc={{ loc|urlencode }}&q={{ q|urlencode }}&page={{ page-1 }}">← Prev</a>{% endif %}
         <span class="text-slate-500 tnum">Page {{ page }} of {{ pages }}</span>
         {% if page < pages %}<a class="px-3 py-1.5 bg-white border border-slate-200 rounded-md shadow-sm hover:border-slate-400"
-           href="/review?review={{ review }}&verification={{ verification }}&page={{ page+1 }}">Next →</a>{% endif %}
+           href="/review?review={{ review }}&verification={{ verification }}&loc={{ loc|urlencode }}&q={{ q|urlencode }}&page={{ page+1 }}">Next →</a>{% endif %}
       </div>
       {% endif %}
     {% endif %}
