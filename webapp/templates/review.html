@@ -61,14 +61,15 @@
 
       <div class="h-5 w-px bg-slate-200 hidden sm:block"></div>
 
-      <div class="flex items-center gap-1.5">
+      <div class="flex items-center gap-1.5" title="Automatic, system-generated check (photos vs. typed plate) — not a human decision. See Status for the telecaller's decision.">
         <span class="text-[10px] font-semibold uppercase tracking-wider text-slate-400 hidden sm:inline">Verification</span>
         <div class="inline-flex items-center gap-0.5 bg-slate-100 rounded-lg p-0.5">
+          {% set _verification_labels = {'all': 'All', 'verified': 'System Verified', 'unverified': 'System Unverified'} %}
           {% for v in ['all','verified','unverified'] %}
             <a href="/review?review={{ review }}&verification={{ v }}&loc={{ loc|urlencode }}&q={{ q|urlencode }}"
                class="px-2.5 py-1 rounded-md text-[12px] font-medium transition-colors
                       {{ 'bg-white text-slate-900 shadow-sm' if verification==v else 'text-slate-500 hover:text-slate-700' }}">
-              {{ v|capitalize }}
+              {{ _verification_labels[v] }}
             </a>
           {% endfor %}
         </div>
@@ -182,9 +183,9 @@
                         {% elif t.processing_status=='FAILED' %}
                           <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200" title="{{ t.processing_error }}">⚠ Failed</span>
                         {% elif t.verification_status=='VERIFIED' %}
-                          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">✓ Verified</span>
+                          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200" title="Automatic system check — not a human decision">✓ System Verified</span>
                         {% else %}
-                          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">⚠ Unverified</span>
+                          <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200" title="Automatic system check — not a human decision">⚠ System Unverified</span>
                         {% endif %}
                       </div>
                       <div class="text-[11px] text-slate-400 max-w-[16rem] truncate" title="{{ t.reason }}">{{ t.reason or '' }}</div>

@@ -75,7 +75,7 @@
   {% if t.source=='image_api' %}
   <div>
     <div class="text-[11px] uppercase tracking-wider text-slate-400 mb-1">Verification</div>
-    {{ field('Machine check', t.verification_status) }}
+    {{ field('Machine check', 'System Verified' if t.verification_status=='VERIFIED' else ('System Unverified' if t.verification_status=='UNVERIFIED' else t.verification_status)) }}
     {{ field('Reason', t.reason if t.reason is defined else None) }}
     {{ field('Review', t.review_status) }}
     {{ field('Reviewed by', t.reviewed_by) }}
@@ -105,7 +105,8 @@
         {% if h.source=='image_api' %}
           <div class="flex items-center gap-1 mt-1.5">
             <span class="text-[10px] font-medium px-1.5 py-0.5 rounded
-              {% if h.verification_status=='VERIFIED' %}bg-emerald-50 text-emerald-700{% else %}bg-amber-50 text-amber-700{% endif %}">{{ h.verification_status|title if h.verification_status else '—' }}</span>
+              {% if h.verification_status=='VERIFIED' %}bg-emerald-50 text-emerald-700{% else %}bg-amber-50 text-amber-700{% endif %}"
+              title="Automatic system check — not a human decision">{{ 'System Verified' if h.verification_status=='VERIFIED' else ('System Unverified' if h.verification_status=='UNVERIFIED' else '—') }}</span>
             <span class="text-[10px] font-medium px-1.5 py-0.5 rounded
               {% if h.review_status=='PASSED' %}bg-emerald-50 text-emerald-700{% elif h.review_status=='REJECTED' %}bg-red-50 text-red-600{% else %}bg-slate-100 text-slate-500{% endif %}">{{ (h.review_status|title) if h.review_status else 'Pending' }}</span>
           </div>
