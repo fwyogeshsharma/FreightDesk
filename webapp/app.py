@@ -38,6 +38,7 @@ from sqlalchemy import distinct, func, or_, select
 
 from pipeline import auth
 from pipeline.db import SourceType, Truck, User, get_session_factory, init_db
+from pipeline.reports import _norm_plate
 from webapp.broker_grouping import (
     find_lead_members, group_broker_rows, lead_phone, lead_plate, lead_trust,
 )
@@ -275,10 +276,66 @@ def api_truck(truck_id: int):
         return JSONResponse(row.as_dict())
 
 
+def _ocr_plate_read(d: dict) -> Optional[str]:
+    """What OCR actually read as a plate, for display — the dedicated plate-detector
+    candidates if any were found, else the same digit-bearing body-text fragments
+    pipeline/reports.py::_plate_fragments() draws on (that function itself isn't
+    reusable here: it needs the live OCR dict, not a persisted trucks row)."""
+    candidates = d.get("plate_candidates") or {}
+    if candidates:
+        return max(candidates, key=candidates.get)
+    frags = []
+    for t in (d.get("body_texts") or []):
+        n = _norm_plate(t)
+        if 2 <= len(n) <= 12 and any(c.isdigit() for c in n) and n not in frags:
+            frags.append(n)
+    return " / ".join(frags[:3]) if frags else None
+
+
+def _plate_reason(d: dict) -> Optional[str]:
+    """Full-sentence reason a field report's vehicle number is UNVERIFIED, for the
+    detail panel's dedicated 'Reason' field (labeled and set apart from the plate
+    there, so restating the typed number reads fine). Reconstructed from what IS
+    persisted on the row: plate_confidence (the match category), license_plate (the
+    typed number, in every category except OCR_ONLY/NONE), and the OCR read (see
+    _ocr_plate_read) — worded as "OCR read", not "photo shows": OCR is noisy and can
+    misread a plate the photo itself displays perfectly clearly, so implying the
+    photo disagrees would be misleading. None for VERIFIED reports or non-field-
+    report rows — nothing to explain there."""
+    status = d.get("plate_confidence")
+    if status == "MISMATCH":
+        return f"Typed '{d.get('license_plate')}' — OCR read '{_ocr_plate_read(d) or '?'}' from the photo instead"
+    if status == "REPORTED":
+        return f"Typed '{d.get('license_plate')}' — OCR couldn't read a plate from the photo to confirm it"
+    if status == "OCR_ONLY":
+        return f"No number typed — '{d.get('license_plate')}' was read from the photo by OCR"
+    if status == "NONE":
+        return "No number typed, and OCR couldn't read a plate from the photo either"
+    return None  # VERIFIED, or no plate_confidence recorded (video/stream)
+
+
+def _plate_hover(d: dict) -> Optional[str]:
+    """Short hover text for the 'i' icon review.html places right next to the
+    already-shown plate — unlike _plate_reason(), doesn't restate the plate value
+    itself (redundant right next to where it's already displayed)."""
+    status = d.get("plate_confidence")
+    if status == "MISMATCH":
+        return f"OCR read '{_ocr_plate_read(d) or '?'}' from the photo instead"
+    if status == "REPORTED":
+        return "OCR couldn't read a plate from the photo to confirm this"
+    if status == "OCR_ONLY":
+        return "Not typed by the reporter — read from the photo by OCR"
+    if status == "NONE":
+        return "No number typed, and OCR couldn't read a plate from the photo either"
+    return None
+
+
 def _enrich(row: Truck) -> dict:
     d = row.as_dict()
     d["time_ago"] = _time_ago(row.detected_at)
     d["detected_at_human"] = row.detected_at.strftime("%Y-%m-%d %H:%M") if row.detected_at else ""
+    d["reason"] = _plate_reason(d)
+    d["plate_hover"] = _plate_hover(d)
     return d
 
 
@@ -674,12 +731,7 @@ def review(request: Request, review: str = "pending",
                 Truck.source == SourceType.image_api, Truck.city.isnot(None))
             .order_by(Truck.city)).all()]
 
-    reports = []
-    for r in rows:
-        d = r.as_dict()
-        d["time_ago"] = _time_ago(r.detected_at)
-        d["detected_at_human"] = r.detected_at.strftime("%Y-%m-%d %H:%M") if r.detected_at else ""
-        reports.append(d)
+    reports = [_enrich(r) for r in rows]
 
     pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     return templates.TemplateResponse(request=request, name="review.html", context={
