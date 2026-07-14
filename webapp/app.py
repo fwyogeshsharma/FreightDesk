@@ -719,6 +719,23 @@ def _sort_leads(leads: list, sort: str, descending: bool) -> list:
 
 _TRUST_FILTERS = {"auto_verified", "verified", "pending", "rejected"}
 
+# Columns index() actually needs — grouping identity (broker_grouping.py) + what
+# index.html renders. Deliberately excludes everything else Truck carries (raw OCR
+# audit fields incl. two JSONB blobs, review/processing metadata, coordinates, etc.)
+# — those only matter in the per-lead detail slide-over, which already re-fetches
+# its own full rows separately (see truck_panel()). Profiling on prod showed
+# materializing full Truck ORM objects for the whole table is ~95% of index()'s
+# cost, so selecting only these columns (plain Core Row tuples, no ORM instrumentation
+# overhead, no JSONB decode) is the highest-leverage speedup available without
+# capping or paginating the pre-group fetch (see the /-uncapped-fetch note above).
+# If the broker page starts showing a new field, add its column here too.
+_INDEX_LIST_COLUMNS = (
+    Truck.id, Truck.detected_at, Truck.source, Truck.license_plate, Truck.company_name,
+    Truck.phone_number, Truck.vehicle_type, Truck.city, Truck.location,
+    Truck.loaded_status, Truck.body_type, Truck.material_type, Truck.driver_name,
+    Truck.axle_type, Truck.other_text, Truck.review_status,
+)
+
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, q: Optional[str] = None, source: Optional[str] = None,
@@ -755,18 +772,36 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
         if cached_leads and now - cached_leads[0] < _INDEX_LEADS_TTL:
             leads = cached_leads[1]
         else:
-            # All existing filters apply exactly as before, at the DB level. What's
-            # different: no LIMIT/OFFSET here — broker-lead grouping (see
-            # broker_grouping.py) needs the whole filtered set in hand before it can
-            # correctly cluster reports into leads and paginate those leads.
-            rows = s.execute(_filtered(select(Truck))
-                             .order_by(Truck.detected_at.desc())).scalars().all()
+            # All existing filters apply exactly as before, at the DB level (WHERE
+            # clauses don't depend on what's in the SELECT list). What's still
+            # different from a normal page: no LIMIT/OFFSET here — broker-lead
+            # grouping (see broker_grouping.py) needs the whole filtered set in hand
+            # before it can correctly cluster reports into leads and paginate those.
+            rows = s.execute(_filtered(select(*_INDEX_LIST_COLUMNS))
+                             .order_by(Truck.detected_at.desc())).all()
             reports = []
             for r in rows:
-                d = r.as_dict()
-                d["time_ago"] = _time_ago(r.detected_at)
-                d["detected_at_human"] = r.detected_at.strftime("%Y-%m-%d %H:%M") if r.detected_at else ""
-                d["fresh"] = _fresh_bucket(r.detected_at)
+                d = {
+                    "id": r.id,
+                    "detected_at": r.detected_at.isoformat() if r.detected_at else None,
+                    "source": r.source.value if isinstance(r.source, SourceType) else r.source,
+                    "license_plate": r.license_plate,
+                    "company_name": r.company_name,
+                    "phone_number": r.phone_number,
+                    "vehicle_type": r.vehicle_type,
+                    "city": r.city,
+                    "location": r.location,
+                    "loaded_status": r.loaded_status,
+                    "body_type": r.body_type,
+                    "material_type": r.material_type,
+                    "driver_name": r.driver_name,
+                    "axle_type": r.axle_type,
+                    "other_text": r.other_text,
+                    "review_status": r.review_status,
+                    "time_ago": _time_ago(r.detected_at),
+                    "detected_at_human": r.detected_at.strftime("%Y-%m-%d %H:%M") if r.detected_at else "",
+                    "fresh": _fresh_bucket(r.detected_at),
+                }
                 reports.append(d)
             leads = group_broker_rows(reports)
             # Sweep expired entries here (not on every request) so distinct search
