@@ -132,8 +132,14 @@ trucks that share a contact number like a dispatcher's line) into one row for th
 Pass/Reject acts on that report's id. Because grouping must see the whole filtered set before it
 can cluster and paginate, `index()` fetches every matching row (no SQL `LIMIT/OFFSET`, no fetch
 cap) and groups/sorts/paginates in Python — deliberate, since a capped fetch silently drops older
-matches from an unfiltered/broad query as the table grows. Revisit (e.g. a materialized lead id or
-DB-side grouping) if this becomes a real perf bottleneck on the prod VM. The detail slide-over
+matches from an unfiltered/broad query as the table grows. This became a real perf bottleneck once
+the payment-report import pushed the table past ~7000 rows (the DB query itself stays sub-second —
+`detected_at` is indexed — but materializing+grouping thousands of rows in Python took 5-19s on the
+small shared prod VM); rather than reintroduce a row cap, `index()` now keeps two short in-process
+TTL caches (`_index_leads_cache` keyed by filter params, 20s; `_index_facets_cache` for the type/city
+dropdown lists, 60s) so repeated requests for the same view reuse the last computed result instead
+of recomputing from scratch — zero data cap, just staleness up to the TTL. Revisit (e.g. a
+materialized lead id or DB-side grouping) if this still isn't enough as the table keeps growing. The detail slide-over
 (`GET /trucks/{id}/panel`) independently re-resolves
 that truck's full sibling history (via a phone/plate lookup, not the list's current filters) so
 "Sighting history" is always complete regardless of what filter you had applied to find the lead.

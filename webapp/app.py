@@ -21,6 +21,7 @@ keeps only the extracted data.
 import hmac
 import os
 import re
+import time
 from collections import namedtuple
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -44,6 +45,20 @@ from webapp.broker_grouping import (
 _HERE = Path(__file__).parent
 
 PAGE_SIZE = 15  # rows per page — keeps each page to ~one screen without long scroll
+
+# `/` fetches+groups the *whole* filtered table on every request (see index()) —
+# deliberately uncapped so grouping/paging never silently drops matches. That full
+# fetch+group is the expensive part (DB query itself is sub-second even at 7k+ rows;
+# most of the cost is materializing/grouping thousands of rows in Python). The prod
+# VM is small and shared with other apps, so re-paying that cost on every single
+# page view/refresh adds real load. These short-TTL caches let repeated requests
+# for the same view reuse the last computed result instead of recomputing from
+# scratch — correctness is unaffected (still zero data cap), just staleness up to
+# the TTL, which is fine for a browsing/refresh workflow.
+_INDEX_LEADS_TTL = 20   # seconds — filtered+grouped leads, keyed by filter params
+_INDEX_FACETS_TTL = 60  # seconds — global type/city dropdown option lists
+_index_leads_cache: dict = {}
+_index_facets_cache: dict = {}
 
 app = FastAPI(title="FreightDesk", description="Truck intelligence & dispatch platform")
 templates = Jinja2Templates(directory=str(_HERE / "templates"))
@@ -729,31 +744,50 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
 
     user = get_current_user(request)  # drives the shared nav (tabs + login/logout)
     can_review = _can_review(user)
+
+    leads_key = (q or "", source or "", vtype or "", loc or "", fresh)
+    now = time.time()
+    cached_leads = _index_leads_cache.get(leads_key)
+    cached_facets = _index_facets_cache.get("facets")
+
     Session = get_session_factory()
     with Session() as s:
-        # All existing filters apply exactly as before, at the DB level. What's
-        # different: no LIMIT/OFFSET here — broker-lead grouping (see
-        # broker_grouping.py) needs the whole filtered set in hand before it can
-        # correctly cluster reports into leads and paginate those leads.
-        rows = s.execute(_filtered(select(Truck))
-                         .order_by(Truck.detected_at.desc())).scalars().all()
-        types = [t for (t,) in s.execute(
-            select(distinct(Truck.vehicle_type)).where(Truck.vehicle_type.isnot(None))
-            .order_by(Truck.vehicle_type)).all()]
-        cities = [c for (c,) in s.execute(
-            select(distinct(Truck.city)).where(Truck.city.isnot(None))
-            .order_by(Truck.city)).all()]
+        if cached_leads and now - cached_leads[0] < _INDEX_LEADS_TTL:
+            leads = cached_leads[1]
+        else:
+            # All existing filters apply exactly as before, at the DB level. What's
+            # different: no LIMIT/OFFSET here — broker-lead grouping (see
+            # broker_grouping.py) needs the whole filtered set in hand before it can
+            # correctly cluster reports into leads and paginate those leads.
+            rows = s.execute(_filtered(select(Truck))
+                             .order_by(Truck.detected_at.desc())).scalars().all()
+            reports = []
+            for r in rows:
+                d = r.as_dict()
+                d["time_ago"] = _time_ago(r.detected_at)
+                d["detected_at_human"] = r.detected_at.strftime("%Y-%m-%d %H:%M") if r.detected_at else ""
+                d["fresh"] = _fresh_bucket(r.detected_at)
+                reports.append(d)
+            leads = group_broker_rows(reports)
+            # Sweep expired entries here (not on every request) so distinct search
+            # queries don't accumulate in memory forever on this memory-constrained VM.
+            for k, (ts, _) in list(_index_leads_cache.items()):
+                if now - ts >= _INDEX_LEADS_TTL:
+                    del _index_leads_cache[k]
+            _index_leads_cache[leads_key] = (now, leads)
+
+        if cached_facets and now - cached_facets[0] < _INDEX_FACETS_TTL:
+            types, cities = cached_facets[1], cached_facets[2]
+        else:
+            types = [t for (t,) in s.execute(
+                select(distinct(Truck.vehicle_type)).where(Truck.vehicle_type.isnot(None))
+                .order_by(Truck.vehicle_type)).all()]
+            cities = [c for (c,) in s.execute(
+                select(distinct(Truck.city)).where(Truck.city.isnot(None))
+                .order_by(Truck.city)).all()]
+            _index_facets_cache["facets"] = (now, types, cities)
+
         pending_count = _pending_reports(s) if can_review else 0
-
-    reports = []
-    for r in rows:
-        d = r.as_dict()
-        d["time_ago"] = _time_ago(r.detected_at)
-        d["detected_at_human"] = r.detected_at.strftime("%Y-%m-%d %H:%M") if r.detected_at else ""
-        d["fresh"] = _fresh_bucket(r.detected_at)
-        reports.append(d)
-
-    leads = group_broker_rows(reports)
     if trust != "all":
         leads = [ld for ld in leads if lead_trust(ld) == trust]
     leads = _sort_leads(leads, sort, descending)
