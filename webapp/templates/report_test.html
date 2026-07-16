@@ -34,6 +34,13 @@
     <div class="h-[3px] bg-slate-700"></div>
   </header>
 
+  <!-- Fixed to the viewport (not the document), so it's visible the instant a
+       response comes back regardless of scroll position — on mobile the Response
+       panel below sits well off-screen until you scroll past the whole form. -->
+  <div id="toast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 hidden transition-opacity duration-300 opacity-0 px-4 w-full max-w-sm">
+    <div id="toast-inner" class="rounded-lg px-4 py-3 shadow-lg text-sm font-semibold flex items-center gap-2 text-white"></div>
+  </div>
+
   <main class="max-w-3xl mx-auto px-5 py-8 grid md:grid-cols-2 gap-6">
     <form id="f" onsubmit="submitReport(event)" class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
       <div>
@@ -130,6 +137,22 @@
   </main>
 
   <script>
+    let toastTimer = null;
+    function showToast(message, ok) {
+      const toast = document.getElementById('toast');
+      const inner = document.getElementById('toast-inner');
+      inner.className = 'rounded-lg px-4 py-3 shadow-lg text-sm font-semibold flex items-center gap-2 text-white ' +
+        (ok ? 'bg-emerald-600' : 'bg-red-600');
+      inner.textContent = (ok ? '✓ ' : '✗ ') + message;
+      clearTimeout(toastTimer);
+      toast.classList.remove('hidden');
+      requestAnimationFrame(() => { toast.style.opacity = '1'; });
+      toastTimer = setTimeout(() => {
+        toast.style.opacity = '0';
+        setTimeout(() => toast.classList.add('hidden'), 300);
+      }, 4000);
+    }
+
     async function submitReport(e) {
       e.preventDefault();
       const form = e.target;
@@ -144,13 +167,23 @@
         const res = await fetch('/api/trucks/report', { method: 'POST', body: new FormData(form) });
         const data = await res.json();
         const ok = res.ok;
+        // The POST response is async (202 Accepted) — OCR/verification hasn't run
+        // yet at this point, so verification_status doesn't exist here (only after
+        // GET /api/trucks/{id} later reports processing_status DONE). Reflect what
+        // this response actually carries: processing_status (QUEUED) + review_status.
         const head = `<div class="mb-2 font-semibold ${ok ? 'text-emerald-400' : 'text-red-400'}">HTTP ${res.status}` +
-          (ok ? ` · ${data.verification_status} · review ${data.review_status}` : '') + `</div>`;
+          (ok ? ` · ${data.processing_status} · review ${data.review_status}` : '') + `</div>`;
         box.innerHTML = head + '<pre class="whitespace-pre-wrap font-mono text-[12px] leading-relaxed">' +
           JSON.stringify(data, null, 2).replace(/</g,'&lt;') + '</pre>';
-        if (ok) document.getElementById('links').classList.remove('hidden');
+        if (ok) {
+          document.getElementById('links').classList.remove('hidden');
+          showToast(`Report #${data.id} submitted — ${data.processing_status}`, true);
+        } else {
+          showToast(data.detail ? String(data.detail) : `Submission failed (HTTP ${res.status})`, false);
+        }
       } catch (err) {
         box.innerHTML = '<span class="text-red-400">Request failed: ' + err + '</span>';
+        showToast('Request failed: ' + err, false);
       } finally {
         btn.disabled = false; btn.textContent = old;
       }
