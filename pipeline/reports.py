@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Optional
 
 from .extract import _extract_phones, _levenshtein
-from .geocode import reverse_geocode
+from .geocode import forward_geocode, reverse_geocode
 
 # Tight normalization for plate comparison: letters+digits only, uppercased.
 _ALNUM = re.compile(r'[^A-Z0-9]')
@@ -180,10 +180,20 @@ def reconcile(reported: dict, ocr: dict, config) -> dict:
     axle_type = (reported.get("axle_type") or "").strip() or None
     # Some Android builds send only GPS coordinates, not a typed address — fall
     # back to reverse geocoding the coordinates so the broker still sees a place
-    # name instead of a blank Location column.
+    # name instead of a blank Location column. The opposite gap also happens (a
+    # typed address but no coordinates): the mobile app only ever reads
+    # latitude/longitude back to plot the map pin, never the location text, so
+    # forward-geocode the typed text in that case — otherwise that report can
+    # never be shown on the app's map despite having a perfectly good location.
     location = (reported.get("location") or "").strip() or None
+    latitude = reported.get("latitude")
+    longitude = reported.get("longitude")
     if not location:
-        location = reverse_geocode(reported.get("latitude"), reported.get("longitude"))
+        location = reverse_geocode(latitude, longitude)
+    elif latitude is None or longitude is None:
+        coords = forward_geocode(location)
+        if coords:
+            latitude, longitude = coords
 
     return {
         "detected_at":      _parse_dt(reported.get("captured_at")),
@@ -203,8 +213,8 @@ def reconcile(reported: dict, ocr: dict, config) -> dict:
         "material_type":    material_type,
         "driver_name":      driver_name,
         "location":         location,
-        "latitude":         reported.get("latitude"),
-        "longitude":        reported.get("longitude"),
+        "latitude":         latitude,
+        "longitude":        longitude,
         "num_wheels":       reported.get("number_of_wheels"),
         "axle_type":        axle_type,
         "reported_by":      (reported.get("reported_by") or "").strip() or None,
