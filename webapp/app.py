@@ -407,8 +407,8 @@ async def report(
     them against the typed fields, and updates the row. The app polls
     GET /api/trucks/{id} until processing_status is DONE or FAILED.
 
-    Photos are retained at most ~2 days (for OCR + telecaller review), then deleted —
-    only the extracted text in the row is permanent. Contributors are anonymous/paid,
+    Photos are retained indefinitely (for OCR, telecaller review, abuse investigation,
+    and re-processing with better models). Contributors are anonymous/paid,
     so a row becomes VERIFIED only when the photos confirm the typed vehicle number;
     otherwise it stays UNVERIFIED with a reason. Every submission is logged
     (submission_log) for abuse review.
@@ -461,7 +461,7 @@ async def report(
     # 1) Insert the QUEUED row from the typed fields (instant — no OCR here).
     row = db_writer.insert_pending_report(reported, images_count=len(uploads))
     truck_id = row["id"]
-    # 2) Persist the photos (≤2-day retention), then attach their storage keys.
+    # 2) Persist the photos (kept indefinitely), then attach their storage keys.
     storage = get_storage()
     keys = []
     for idx, (data, ext, ctype) in enumerate(uploads):
@@ -628,8 +628,9 @@ def truck_image(truck_id: int, idx: int, request: Request,
                 user: Optional[CurrentUser] = Depends(get_current_user)):
     """Stream a stored report photo. Available to reviewers (telecaller/admin, for
     queue triage) and to the contributor who submitted the report (so the mobile app
-    can show back what was uploaded); 403 otherwise. Available only within the ~2-day
-    retention window — returns 404 once the photo has been auto-deleted."""
+    can show back what was uploaded); 403 otherwise. Photos are kept indefinitely, but
+    ones uploaded before 2026-09-14 were deleted under the old ~2-day policy, so a 404
+    here means the object is gone for good rather than temporarily unavailable."""
     import mimetypes
     from fastapi.responses import Response
     from pipeline.storage import get_storage
@@ -649,7 +650,7 @@ def truck_image(truck_id: int, idx: int, request: Request,
         key = keys[idx]
     data = get_storage().get(key)
     if data is None:
-        raise HTTPException(404, "image expired or unavailable")
+        raise HTTPException(404, "image no longer available")
     return Response(content=data, media_type=mimetypes.guess_type(key)[0] or "image/jpeg")
 
 

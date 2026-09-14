@@ -13,8 +13,10 @@ Submit one truck sighting (1–5 photos + details) → creates one record.
   app must then **poll `GET /api/trucks/{id}`** until `processing_status` is `DONE` (or
   `FAILED`) to get the OCR result. See **Polling for the result** below. *(This replaced the
   old behavior where the POST blocked until OCR finished and returned the full result.)*
-- Photos are kept in temporary storage for up to ~2 days (for OCR + telecaller review), then
-  auto-deleted. Only the extracted data is permanent.
+- Uploaded photos are **retained indefinitely** (for OCR, telecaller review, abuse
+  investigation, and re-processing with improved models). *(Changed 2026-09-14 — photos
+  previously auto-deleted after ~2 days. Photos uploaded before that date were deleted under
+  the old policy and are gone; `GET /trucks/{id}/image/{idx}` still returns `404` for them.)*
 
 ---
 
@@ -133,7 +135,7 @@ record; watch **`processing_status`**:
 |---|---|---|
 | `QUEUED` / `PROCESSING` | OCR not finished yet | show "Processing…", poll again in ~3 s |
 | `DONE` | OCR finished — read `verification_status`, `license_plate`, `company_name`, … | stop processing-poll; show result |
-| `FAILED` | Photos unreadable/expired or an error (`processing_error`) | ask the user to resubmit |
+| `FAILED` | Photos unreadable/missing or an error (`processing_error`) | ask the user to resubmit |
 
 > On a small server OCR can take a while (seconds to a minute under load). Suggested client:
 > poll every ~3 s, and after ~60 s show "still processing — we'll update it shortly" rather
@@ -219,8 +221,9 @@ GET /trucks/{id}/image/{idx}
   send the same token used for the report POST. Anonymous submissions have no owner and
   can't be fetched back this way.
 - Returns the raw image bytes (`Content-Type: image/jpeg` or similar). `403` if the token
-  doesn't own the report, `404` if the photo has already been auto-deleted (~2-day window)
-  or `idx` is out of range.
+  doesn't own the report, `404` if `idx` is out of range or the photo is missing (photos are
+  kept indefinitely now, but ones uploaded before 2026-09-14 were deleted under the old
+  ~2-day policy — so treat `404` as "no longer available", not as an error to retry).
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/trucks/124/image/0 --output photo0.jpg

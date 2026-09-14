@@ -109,8 +109,9 @@ class Truck(Base):
     processing_status: Mapped[Optional[str]] = mapped_column(String(16), index=True)  # QUEUED/PROCESSING/DONE/FAILED
     processing_error: Mapped[Optional[str]] = mapped_column(String(500))
     processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    # Storage keys for the uploaded photos, retained up to 2 days then auto-deleted
-    # (photos are not permanent — only the extracted text is). NULL once purged.
+    # Storage keys for the uploaded photos, retained indefinitely since 2026-09-14.
+    # NULL for reports submitted without photos; keys for reports predating the
+    # retention change may point at objects the old ~2-day rule already deleted.
     image_keys: Mapped[Optional[list]] = mapped_column(JSONB)
 
     # Full audit data for the detail view.

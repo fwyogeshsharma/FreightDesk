@@ -134,12 +134,12 @@
               {% set size_cls = 'w-full h-11' if full else 'w-11 h-11' %}
               <a href="/trucks/{{ truck_id }}/image/{{ idx }}" target="_blank"
                  class="block {{ 'col-span-2' if full else '' }}"
-                 title="Photo {{ idx + 1 }} of {{ n }} (kept ~2 days)">
+                 title="Photo {{ idx + 1 }} of {{ n }}">
                 <img src="/trucks/{{ truck_id }}/image/{{ idx }}" alt="" loading="lazy"
                      class="{{ size_cls }} object-cover rounded-md border border-slate-200 bg-slate-100 hover:ring-2 hover:ring-marigold-soft"
-                     onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden'); this.nextElementSibling.classList.add('flex'); const a=this.closest('a'); a.removeAttribute('href'); a.removeAttribute('target'); a.classList.add('cursor-default'); a.title='Photo expired (kept ~2 days)'">
+                     onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden'); this.nextElementSibling.classList.add('flex'); const a=this.closest('a'); a.removeAttribute('href'); a.removeAttribute('target'); a.classList.add('cursor-default'); a.title='Photo no longer available'">
                 <span class="hidden {{ size_cls }} shrink-0 items-center justify-center rounded-md border border-dashed border-slate-300 bg-slate-50 text-slate-300"
-                      title="Photo expired (kept ~2 days)">
+                      title="Photo no longer available">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="10" r="1.8"/><path d="M21 16l-5.5-5-4.5 4.5-3-2.5-5 4"/></svg>
                 </span>
               </a>
@@ -163,7 +163,7 @@
                           {{ photo_tile(t.id, 0, n) }}
                           <button type="button"
                                   class="w-11 h-11 flex items-center justify-center rounded-md border border-slate-200 bg-slate-700 text-white text-xs font-semibold hover:bg-slate-600"
-                                  title="{{ n - 1 }} more photo(s) — opens each in a new tab (kept ~2 days)"
+                                  title="{{ n - 1 }} more photo(s) — opens each in a new tab"
                                   onclick="{% for idx in range(1, n) %}window.open('/trucks/{{ t.id }}/image/{{ idx }}', '_blank');{% endfor %}">
                             +{{ n - 1 }}
                           </button>

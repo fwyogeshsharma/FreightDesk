@@ -6,9 +6,10 @@ truck ids off an in-process queue and runs the detect→OCR→reconcile chain **
 time** (so two OCR passes can't exhaust the small VM's RAM), then marks the row
 DONE/FAILED for the app to poll.
 
-Durability: the photos live in storage (≤2 days) and `processing_status` is the source
-of truth, so on startup we re-enqueue any rows a crash/restart left QUEUED/PROCESSING
-and finish them. Rows whose photos have already expired are marked FAILED.
+Durability: the photos live in storage (kept indefinitely — see pipeline/storage.py) and
+`processing_status` is the source of truth, so on startup we re-enqueue any rows a
+crash/restart left QUEUED/PROCESSING and finish them. Rows whose photos are missing are
+marked FAILED — still reachable for old rows whose photos predate the retention change.
 
 Single-process assumption: the in-memory queue belongs to ONE uvicorn worker. The VM
 runs a single worker (see Dockerfile/COMMANDS.md). Do not scale to multiple uvicorn
@@ -25,7 +26,7 @@ from pipeline import db_writer
 from pipeline.extract import extract_truck_fields
 from pipeline.image_api import build_event_from_images
 from pipeline.reports import reconcile
-from pipeline.storage import get_storage
+from pipeline.storage import GCSStorage, RETENTION_DAYS, get_storage, retention_enabled
 
 log = logging.getLogger("freightdesk.worker")
 
@@ -182,6 +183,13 @@ def _sweeper_loop() -> None:
         time.sleep(_SWEEP_INTERVAL_SEC)
 
 
+def _sweeper_wanted() -> bool:
+    """Only run the sweeper when something can actually expire: the local backend with
+    a positive IMAGE_RETENTION_DAYS. Photos are kept forever by default, and on GCS
+    expiry is the bucket lifecycle rule's job regardless of what this process thinks."""
+    return retention_enabled() and not isinstance(get_storage(), GCSStorage)
+
+
 def start_worker() -> None:
     """Start the worker + sweeper threads and recover unfinished jobs. Idempotent."""
     global _started
@@ -190,5 +198,9 @@ def start_worker() -> None:
             return
         _started = True
     threading.Thread(target=_worker_loop, name="ocr-worker", daemon=True).start()
-    threading.Thread(target=_sweeper_loop, name="image-sweeper", daemon=True).start()
+    if _sweeper_wanted():
+        log.info("image sweeper on: deleting photos older than %g day(s)", RETENTION_DAYS)
+        threading.Thread(target=_sweeper_loop, name="image-sweeper", daemon=True).start()
+    else:
+        log.info("image sweeper off: report photos are kept indefinitely")
     recover_pending()

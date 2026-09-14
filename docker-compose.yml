@@ -43,7 +43,9 @@ services:
       # when the VM's own service account can't be used (see docker-compose.override.yml).
       IMAGE_STORAGE_BACKEND: ${IMAGE_STORAGE_BACKEND:-local}
       IMAGE_STORAGE_DIR: ${IMAGE_STORAGE_DIR:-/app/uploads}
-      IMAGE_RETENTION_DAYS: ${IMAGE_RETENTION_DAYS:-2}
+      # 0 = keep photos forever (the policy since 2026-09-14). A positive value only
+      # affects the local backend; on gcs, expiry is the bucket lifecycle rule's job.
+      IMAGE_RETENTION_DAYS: ${IMAGE_RETENTION_DAYS:-0}
       GCS_BUCKET: ${GCS_BUCKET:-}
       GCS_PREFIX: ${GCS_PREFIX:-}
       GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}

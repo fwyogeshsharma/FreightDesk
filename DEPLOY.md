@@ -111,47 +111,61 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web pyt
 docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web python scripts/migrate_async_processing.py
 ```
 
-### Mobile-report photos — async processing & GCS storage (≤2-day retention)
+### Mobile-report photos — async processing & GCS storage (kept indefinitely)
 
 `POST /api/trucks/report` is **asynchronous**: it accepts the report, stores the photos, and
 returns `202` immediately; a background worker OCRs them and the app polls `GET /api/trucks/{id}`
-until `processing_status` is `DONE` (see `API_CONTRACT.md`). Photos are kept **at most ~2 days**
-(for OCR + telecaller review), then deleted — only the extracted text is permanent.
+until `processing_status` is `DONE` (see `API_CONTRACT.md`). In prod the photos live in a GCS
+bucket, off the 2 GB VM's disk.
 
-In prod, store the photos in a **GCS bucket whose lifecycle rule enforces the 2-day expiry** (so
-deletion is guaranteed by GCP, and the 2 GB VM's disk is never used for images). One-time setup
-(run from your laptop with `gcloud`, or Cloud Shell):
+**Retention: photos are kept forever.** *(Changed 2026-09-14. Previously the bucket had a
+lifecycle rule deleting objects at `age: 2`, and the repo described "only the extracted text is
+permanent" as a core invariant — that is no longer true, and `API_CONTRACT.md` no longer promises
+contributors that their photos are discarded. Photos uploaded before the change were already
+deleted under the old rule and are not recoverable.)*
+
+**Expiry is a property of the bucket, never of the app.** `IMAGE_RETENTION_DAYS` does nothing on
+the `gcs` backend in either direction — it cannot delete a GCS object, and a bucket lifecycle rule
+will delete objects regardless of what it says. To change retention, change the bucket:
 
 ```bash
-# 1. Create a private bucket in the same region as the VM
-gcloud storage buckets create gs://freightdesk-report-photos \
-  --project=agile-airship-198614 --location=us-central1 --uniform-bucket-level-access
+BUCKET=gs://freightdesk-report-photos-agile-airship-198614
 
-# 2. Auto-delete objects 2 days after creation (the retention requirement, enforced by GCP)
-printf '{"rule":[{"action":{"type":"Delete"},"condition":{"age":2}}]}' > /tmp/lifecycle.json
-gcloud storage buckets update gs://freightdesk-report-photos --lifecycle-file=/tmp/lifecycle.json
+# Inspect the current rule (no "lifecycle_config" in the output = keep forever)
+gcloud storage buckets describe $BUCKET --format="json(lifecycle_config)"
 
-# 3. Let the VM's service account read/write the bucket (no key files — uses the VM identity).
-#    Find the VM service account: GCP Console → VM → "Service account", or:
-#    gcloud compute instances describe rolling-expense-prod --zone=us-central1-a \
-#      --format="value(serviceAccounts[0].email)"
-gcloud storage buckets add-iam-policy-binding gs://freightdesk-report-photos \
-  --member="serviceAccount:<VM_SERVICE_ACCOUNT_EMAIL>" --role=roles/storage.objectAdmin
+# Keep forever (the current setting)
+gcloud storage buckets update $BUCKET --clear-lifecycle
+
+# Or re-introduce an expiry — e.g. delete 90 days after upload
+printf '{"rule":[{"action":{"type":"Delete"},"condition":{"age":90}}]}' > /tmp/lifecycle.json
+gcloud storage buckets update $BUCKET --lifecycle-file=/tmp/lifecycle.json
 ```
 
-Then point the app at it via the VM's `.env` and restart:
+> Lifecycle rules are evaluated asynchronously (typically within 24 h), so an `age: N` rule means
+> "N days, plus up to a day of slack" — never a precise cutoff. The bucket also has **soft delete
+> on with a 7-day window**, so objects removed by a rule (or by mistake) can be recovered with
+> `gcloud storage restore` for 7 days afterwards.
+
+The live bucket is `freightdesk-report-photos-agile-airship-198614` (project `agile-airship-198614`,
+location `US` multi-region, uniform bucket-level access **off**). Point the app at it via the VM's
+`.env` and restart:
 
 ```bash
 IMAGE_STORAGE_BACKEND=gcs
-GCS_BUCKET=freightdesk-report-photos
-# IMAGE_RETENTION_DAYS is informational here — GCS lifecycle does the actual deleting.
+GCS_BUCKET=freightdesk-report-photos-agile-airship-198614
+# IMAGE_RETENTION_DAYS is ignored by the gcs backend — see above.
 ```
 
-> The web container authenticates to GCS with the VM's own service account (Application Default
-> Credentials) — **no JSON key file needed** — *provided the VM has a storage read-write scope*
-> (`cloud-platform` or `devstorage.read_write`). Default GCE VMs often have `devstorage.read_only`,
-> which permits reads but blocks uploads; widening the scope needs a VM stop/start. Locally, leave
-> `IMAGE_STORAGE_BACKEND=local` (plain files under `./uploads`, swept after 2 days).
+> The web container authenticates to GCS with a **dedicated service-account key** mounted into
+> that container only (`gcs-key.json`, git-ignored), not the VM's ambient identity — the VM is
+> shared with other apps, so its own service account is deliberately not used here. If you ever
+> switch to Application Default Credentials instead, the VM needs a storage read-write scope
+> (`cloud-platform` or `devstorage.read_write`); default GCE VMs often have `devstorage.read_only`,
+> which permits reads but blocks uploads, and widening the scope needs a VM stop/start.
+>
+> Locally, leave `IMAGE_STORAGE_BACKEND=local` — plain files under `./uploads`, also kept forever
+> by default. Set `IMAGE_RETENTION_DAYS=<days>` to turn the local sweeper back on.
 >
 > **Single-worker only:** the OCR queue lives in one process. Keep uvicorn at one worker on the VM
 > (the default). Scaling workers needs a shared queue first.
@@ -273,7 +287,7 @@ run_webapp.bat
 
 `multipart/form-data`. **Asynchronous** — returns `202` immediately; the app polls
 `GET /api/trucks/{id}` for `processing_status` (full contract in `API_CONTRACT.md`). Photos are
-stored ≤2 days for OCR + review, then auto-deleted.
+stored indefinitely for OCR, review, and re-processing.
 
 | Field | Type | Required | Notes |
 |---|---|---|---|

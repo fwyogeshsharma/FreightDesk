@@ -2,7 +2,7 @@
 
 The mobile /report API is asynchronous: it accepts the report, returns immediately,
 and OCRs the photos in a background worker. These columns hold the job lifecycle and
-the (temporary, ≤2-day) storage keys for the uploaded photos.
+the storage keys for the uploaded photos.
 
 `Base.metadata.create_all` only creates missing tables, never new columns on an
 existing one, so this idempotent migration ALTERs the table. Safe to run repeatedly.

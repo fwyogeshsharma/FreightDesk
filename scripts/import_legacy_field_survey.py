@@ -19,7 +19,7 @@ Receive", "INVALID NO.", etc.). Design decisions, agreed with the user:
     "Anyone with the link — Viewer"), and re-hosted through the existing
     pipeline.storage backend under the same "reports/<id>/<idx>.ext" key
     convention the mobile /report upload path uses — so it's subject to the same
-    ~2-day retention as any other report photo. Without --with-photos, image_keys
+    retention policy as any other report photo. Without --with-photos, image_keys
     is left NULL and the raw Drive links are kept in other_text instead.
   - Every field not covered by a dedicated column (driver/owner/transporter name,
     destinations+rate, axle, weight capacity, make/model, dimensions, remarks,

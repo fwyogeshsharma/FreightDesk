@@ -1,15 +1,22 @@
-"""Temporary photo storage for mobile field reports.
+"""Photo storage for mobile field reports.
 
-Photos are kept only long enough to OCR them and let a telecaller eyeball them
-during review — **retained at most `IMAGE_RETENTION_DAYS` (default 2), then deleted.**
-Only the extracted text in the `trucks` table is permanent.
+**Photos are retained indefinitely** (changed 2026-09-14 — they used to be deleted
+after ~2 days, and a lot of prose in this repo still assumed that; see DEPLOY.md for
+the history). `IMAGE_RETENTION_DAYS` controls it:
+
+- ``0`` (the default) — keep forever, never sweep.
+- ``> 0``             — delete anything older than that many days.
 
 Two interchangeable backends, selected by `IMAGE_STORAGE_BACKEND`:
 
-- ``local`` (dev) — files under a base dir; a sweeper deletes anything older than the
-  retention window. Env: ``IMAGE_STORAGE_DIR`` (default ``<root>/uploads``).
-- ``gcs`` (prod) — a Google Cloud Storage bucket whose **lifecycle rule** auto-deletes
-  objects after the retention window, so expiry is enforced by GCP, not by this code.
+- ``local`` (dev) — files under a base dir; when retention is enabled a sweeper deletes
+  anything older than the window. Env: ``IMAGE_STORAGE_DIR`` (default ``<root>/uploads``).
+- ``gcs`` (prod) — a Google Cloud Storage bucket. Expiry there is a property of the
+  **bucket's lifecycle rule**, never of this code, so `IMAGE_RETENTION_DAYS` is ignored
+  by this backend in both directions: setting it cannot delete a GCS object, and the
+  bucket rule will delete objects no matter what it says. The prod bucket currently has
+  **no** lifecycle rule (objects kept forever); change retention there with
+  ``gcloud storage buckets update --lifecycle-file=...``, not with this env var.
   Env: ``GCS_BUCKET`` (required), ``GCS_PREFIX`` (optional key prefix).
 
 Both implement the same tiny interface: ``put(key, data, content_type)``,
@@ -24,8 +31,14 @@ from typing import Optional
 # Project root (folder containing pipeline/).
 _ROOT = Path(__file__).resolve().parent.parent
 
-RETENTION_DAYS = float(os.environ.get("IMAGE_RETENTION_DAYS", "2"))
+# 0 (the default) = keep photos forever. Any positive value = delete after that many days.
+RETENTION_DAYS = float(os.environ.get("IMAGE_RETENTION_DAYS", "0") or 0)
 RETENTION_SECONDS = RETENTION_DAYS * 86400
+
+
+def retention_enabled() -> bool:
+    """True when photos are set to expire. False = keep forever (the default)."""
+    return RETENTION_DAYS > 0
 
 
 class LocalStorage:
@@ -58,7 +71,14 @@ class LocalStorage:
             p.unlink()
 
     def purge_expired(self) -> int:
-        """Delete files older than the retention window. Returns count removed."""
+        """Delete files older than the retention window. Returns count removed.
+
+        No-op when retention is disabled (IMAGE_RETENTION_DAYS=0, the default) — the
+        guard matters, since without it a 0-day window would mean "older than now",
+        i.e. delete every photo the moment it lands.
+        """
+        if not retention_enabled():
+            return 0
         cutoff = time.time() - RETENTION_SECONDS
         removed = 0
         for f in self.base.rglob("*"):
@@ -72,8 +92,10 @@ class LocalStorage:
 
 
 class GCSStorage:
-    """Google Cloud Storage backend. Expiry is handled by the bucket's lifecycle
-    rule (see DEPLOY.md), so `purge_expired` is a no-op here."""
+    """Google Cloud Storage backend. Any expiry is a property of the bucket's lifecycle
+    rule (see DEPLOY.md), never of this code, so `purge_expired` is always a no-op here
+    and `IMAGE_RETENTION_DAYS` has no effect. The prod bucket has no rule today, so
+    objects are kept forever."""
 
     def __init__(self, bucket: Optional[str] = None, prefix: Optional[str] = None):
         bucket = bucket or os.environ.get("GCS_BUCKET")
@@ -106,7 +128,7 @@ class GCSStorage:
             blob.delete()
 
     def purge_expired(self) -> int:
-        return 0  # bucket lifecycle rule deletes objects after the retention window
+        return 0  # expiry, if any, belongs to the bucket's lifecycle rule
 
 
 _storage = None
