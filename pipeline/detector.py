@@ -10,6 +10,16 @@ from .utils import apply_roi, compute_iou
 
 _PLATE_MODEL_PATH = Path(__file__).parent.parent / "models" / "best.pt"
 
+# The generic vehicle detector. Unlike best.pt this file is NOT in the repo (it is
+# gitignored as an auto-downloadable asset), so resolve it explicitly: pass ultralytics
+# a bare "yolov8n.pt" and it silently downloads from GitHub on first use *in every fresh
+# container*, which turns a GitHub outage into "every report FAILs OCR" in prod. The
+# Dockerfile bakes a copy into /app at build time; locally it lands beside the project
+# the first time it is fetched. Only fall back to the bare name (i.e. allow the
+# download) when no local copy exists at all.
+_VEHICLE_MODEL_NAME = "yolov8n.pt"
+_VEHICLE_MODEL_PATH = Path(__file__).parent.parent / _VEHICLE_MODEL_NAME
+
 # COCO class IDs — trucks and buses only (skip cars/motorcycles which don't carry text labels)
 # COCO: 5=bus, 6=train, 7=truck — tanker trucks frequently classify as "train"
 _VEHICLE_CLASSES = [5, 6, 7]
@@ -46,7 +56,9 @@ class Detector:
     def _load_models(self):
         from ultralytics import YOLO
         if self._vehicle_model is None:
-            self._vehicle_model = YOLO("yolov8n.pt")
+            weights = (str(_VEHICLE_MODEL_PATH) if _VEHICLE_MODEL_PATH.exists()
+                       else _VEHICLE_MODEL_NAME)
+            self._vehicle_model = YOLO(weights)
 
     def detect(self, frame: np.ndarray) -> List[Detection]:
         self._load_models()

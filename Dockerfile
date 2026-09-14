@@ -26,6 +26,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 # at /root/.EasyOCR is otherwise ephemeral and re-downloaded after every restart).
 RUN python -c "import easyocr; easyocr.Reader(['en'], gpu=False, verbose=False)"
 
+# Same reasoning for the YOLO vehicle detector. yolov8n.pt is gitignored (ultralytics
+# can fetch it), so without this it is downloaded from GitHub on the first detection in
+# EVERY fresh container — and a GitHub outage or a slow VM network then means every
+# mobile report FAILs OCR. Baking it in at build time makes startup offline-safe; the
+# `test -s` fails the build loudly rather than shipping an image that will 504 in prod.
+# WORKDIR is /app, so this lands at /app/yolov8n.pt, where detector.py looks for it.
+RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')" \
+    && test -s yolov8n.pt
+
 COPY pipeline ./pipeline
 COPY webapp ./webapp
 COPY scripts ./scripts
