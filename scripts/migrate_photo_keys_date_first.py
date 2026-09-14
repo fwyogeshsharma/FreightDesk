@@ -58,8 +58,20 @@ _CTYPE_BY_EXT = {".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                  ".png": "image/png", ".webp": "image/webp"}
 
 
+# Sentinel: the row references this key but the object is not in storage at all.
+# Overwhelmingly these are photos the old ~2-day lifecycle rule deleted long before
+# retention was turned off; `image_keys` was never cleared, so the row still points
+# at them. Expected, not an error — there is nothing to migrate.
+MISSING = object()
+
+
+def _is_not_found(exc) -> bool:
+    return type(exc).__name__ == "NotFound" or getattr(exc, "code", None) == 404
+
+
 def _created_date(storage, key: str):
-    """UTC date the object was stored, or None if that can't be determined."""
+    """UTC date the object was stored, MISSING if the object is gone, or None if the
+    date can't be determined for some other reason."""
     if not isinstance(storage, GCSStorage):
         return None
     try:
@@ -68,12 +80,15 @@ def _created_date(storage, key: str):
         if blob.time_created:
             return blob.time_created.astimezone(timezone.utc).strftime("%Y-%m-%d")
     except Exception as e:
+        if _is_not_found(e):
+            return MISSING
         print(f"    ! could not read timeCreated for {key}: {type(e).__name__}: {e}")
     return None
 
 
 def _target_key(storage, key: str, only_suffix: bool):
-    """New date-first key for `key`, or None to leave it alone."""
+    """New date-first key for `key`, MISSING if the object no longer exists, or None
+    to leave it alone."""
     if _LAYOUT_C.match(key):
         return None                      # already migrated
     m = _LAYOUT_B.match(key)
@@ -86,6 +101,8 @@ def _target_key(storage, key: str, only_suffix: bool):
     if m:
         truck_id, leaf = m.groups()
         date = _created_date(storage, key)
+        if date is MISSING:
+            return MISSING               # photo long gone; nothing to move
         if not date:
             return None                  # no trustworthy date; leave it where it is
         return f"reports/{date}/{truck_id}/{leaf}"
@@ -108,6 +125,8 @@ def main():
 
     Session = get_session_factory()
     moved = skipped = failed = 0
+    gone = 0                 # keys whose object is no longer in storage
+    gone_rows = set()
     rows_changed = 0
 
     with Session() as s:
@@ -123,6 +142,10 @@ def main():
 
             for i, key in enumerate(keys):
                 target = _target_key(storage, key, args.only_suffix)
+                if target is MISSING:
+                    gone += 1
+                    gone_rows.add(row.id)
+                    continue
                 if not target:
                     skipped += 1
                     continue
@@ -179,6 +202,14 @@ def main():
     print(f"\n{'would move' if not args.apply else 'moved'}: {moved} object(s) "
           f"across {rows_changed} row(s)")
     print(f"left alone: {skipped} object(s) (already date-first, or no date available)")
+    if gone:
+        print(f"already gone: {gone} key(s) across {len(gone_rows)} row(s) reference a "
+              f"photo that is no longer in storage.")
+        print("  Expected: these were deleted by the old ~2-day lifecycle rule before "
+              "retention was turned off,")
+        print("  and image_keys was never cleared. Nothing to migrate; the rows are "
+              "left untouched and still")
+        print("  serve a 404 for those photos, exactly as they did before this run.")
     if failed:
         print(f"FAILED: {failed} object(s) - their rows still point at the old keys")
     if not args.apply:
