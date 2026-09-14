@@ -20,8 +20,15 @@ Two interchangeable backends, selected by `IMAGE_STORAGE_BACKEND`:
   Env: ``GCS_BUCKET`` (required), ``GCS_PREFIX`` (optional key prefix).
 
 Both implement the same tiny interface: ``put(key, data, content_type)``,
-``get(key) -> bytes|None``, ``delete(key)``, ``purge_expired()``. Keys are opaque
-strings like ``reports/<truck_id>/<idx>.jpg``.
+``get(key) -> bytes|None``, ``delete(key)``, ``purge_expired()``.
+
+Keys are **opaque to this module** — it only ever stores and fetches what it is handed.
+The upload path currently mints ``reports/<truck_id>_<YYYY-MM-DD>/<idx>.jpg`` (the date
+makes the storage date readable when browsing a GCS bucket, where synthetic folder rows
+carry no timestamp of their own); reports written before 2026-09-14 use the older
+``reports/<truck_id>/<idx>.jpg``. Both resolve fine, because a photo is always fetched
+by the key recorded in ``trucks.image_keys``, never by rebuilding one from a pattern —
+so the layout can change again without a migration. Don't add code that parses a key.
 """
 import os
 import time
