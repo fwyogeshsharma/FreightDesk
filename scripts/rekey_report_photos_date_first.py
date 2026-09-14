@@ -19,11 +19,15 @@ Where the date comes from:
   - layout A: the stored object's own creation time, in UTC, read before the copy.
 Both match what the upload path would have written at the time.
 
+Deliberately NOT named migrate_*.py: deploy.sh auto-runs every scripts/migrate_*.py
+on each deploy, and this is one-off housekeeping, not a schema migration. Running it
+unattended on every deploy would scan every row and hit the GCS API once per key.
+
 **Run this on the VM**, where DATABASE_URL points at the prod DB and the GCS
 credentials are mounted — it has to update `trucks.image_keys` in the same pass:
 
-    docker compose run --rm web python scripts/migrate_photo_keys_date_first.py
-    docker compose run --rm web python scripts/migrate_photo_keys_date_first.py --apply
+    docker compose run --rm web python scripts/rekey_report_photos_date_first.py
+    docker compose run --rm web python scripts/rekey_report_photos_date_first.py --apply
 
 Dry-run by default: it prints every move and changes nothing. Add --apply to execute.
 --only-suffix limits the run to layout B (today's folders) and leaves A alone.
