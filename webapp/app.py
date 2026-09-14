@@ -462,20 +462,23 @@ async def report(
     row = db_writer.insert_pending_report(reported, images_count=len(uploads))
     truck_id = row["id"]
     # 2) Persist the photos (kept indefinitely), then attach their storage keys.
-    #    The folder carries the upload date — "reports/<truck_id>_<YYYY-MM-DD>/<idx>" —
-    #    purely so the date is readable when browsing the bucket: GCS has no real
-    #    folders, so the synthetic folder rows in the console show no timestamp of their
-    #    own (only the objects inside them do). UTC, to match the objects' timeCreated
-    #    exactly — a local-time label could read a day ahead of the metadata beside it.
-    #    This is the *upload* date, deliberately not the client-supplied captured_at
-    #    that detected_at uses. Nothing reads the key's shape: photos are always fetched
-    #    via the image_keys stored on the row, so reports written under the older
-    #    "reports/<truck_id>/<idx>" layout keep resolving untouched.
+    #    Keys are "reports/<YYYY-MM-DD>/<truck_id>/<idx>" — the upload date FIRST, so a
+    #    whole day is a single prefix. That shape is chosen for housekeeping: deleting
+    #    or lifecycling one day's photos is then one folder in the console (or one
+    #    `gcloud storage rm -r .../reports/<date>/`) instead of hand-picking hundreds of
+    #    per-report folders. A busy day is ~40 reports/hour from a single contributor,
+    #    so per-report folders at the top level get unmanageable fast.
+    #    UTC, to match the objects' own timeCreated — a local-time label could read a
+    #    day ahead of the metadata beside it. This is the *upload* date, deliberately
+    #    not the client-supplied captured_at that detected_at uses.
+    #    Nothing reads the key's shape: photos are always fetched via the image_keys
+    #    stored on the row, so the two earlier layouts ("reports/<truck_id>/<idx>" and
+    #    "reports/<truck_id>_<date>/<idx>") keep resolving untouched.
     storage = get_storage()
     stored_on = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     keys = []
     for idx, (data, ext, ctype) in enumerate(uploads):
-        key = f"reports/{truck_id}_{stored_on}/{idx}{ext}"
+        key = f"reports/{stored_on}/{truck_id}/{idx}{ext}"
         storage.put(key, data, content_type=ctype)
         keys.append(key)
     db_writer.set_image_keys(truck_id, keys)

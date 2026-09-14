@@ -17,7 +17,7 @@ Receive", "INVALID NO.", etc.). Design decisions, agreed with the user:
     personal accounts). With --with-photos, each Drive file id is extracted from
     "Truck Photo 1"/"2", downloaded anonymously (the folder must be shared
     "Anyone with the link — Viewer"), and re-hosted through the existing
-    pipeline.storage backend under the same "reports/<id>_<date>/<idx>.ext" key
+    pipeline.storage backend under the same "reports/<date>/<id>/<idx>.ext" key
     convention the mobile /report upload path uses — so it's subject to the same
     retention policy as any other report photo. Without --with-photos, image_keys
     is left NULL and the raw Drive links are kept in other_text instead.
@@ -186,7 +186,7 @@ def _download_drive_file(opener, file_id: str, timeout=30):
 
 def _fetch_row_photos(opener, truck_id: int, drive_urls: list, failures: list, row_num: int):
     """Download each Drive photo for a row and re-host it via pipeline.storage
-    under the same reports/<id>_<YYYY-MM-DD>/<idx>.ext convention the mobile upload
+    under the same reports/<YYYY-MM-DD>/<id>/<idx>.ext convention the mobile upload
     path uses. The date is when this import stored the file, not when the surveyor
     took the photo — same meaning as on a mobile report.
     Returns the list of stored keys (may be shorter than drive_urls on failure —
@@ -203,7 +203,7 @@ def _fetch_row_photos(opener, truck_id: int, drive_urls: list, failures: list, r
             try:
                 data, ctype = _download_drive_file(opener, file_id)
                 ext = _EXT_BY_CTYPE.get(ctype, ".jpg")
-                key = f"reports/{truck_id}_{stored_on}/{idx}{ext}"
+                key = f"reports/{stored_on}/{truck_id}/{idx}{ext}"
                 storage.put(key, data, content_type=ctype)
                 keys.append(key)
                 break
@@ -388,7 +388,7 @@ def main():
         opener = _make_drive_opener() if args.with_photos else None
         for i, (row, truck) in enumerate(to_insert, start=1):
             s.add(truck)
-            s.flush()  # assigns truck.id, needed for the reports/<id>_<date>/<idx> key
+            s.flush()  # assigns truck.id, needed for the reports/<date>/<id>/<idx> key
             if args.with_photos:
                 drive_urls = [u for u in (row.get("Truck Photo 1", ""), row.get("Truck Photo 2", "")) if u]
                 if drive_urls:
