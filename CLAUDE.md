@@ -6,11 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 FreightDesk ingests trucks from three sources, OCRs their contact details (license plate,
 **mobile number**, company), stores every sighting in one PostgreSQL `trucks` table, and serves
-it to brokers/telecallers in a FastAPI web console so they can call drivers. **Core invariant:
-only the extracted text is permanent.** Video/stream decode frames and discard the pixels
-immediately. Mobile reports keep the uploaded photos in temporary storage for at most ~2 days
-(for async OCR + telecaller review), then auto-delete them — the photos are never retained
-long-term (this replaced an earlier "photos are never stored at all" rule).
+it to brokers/telecallers in a FastAPI web console so they can call drivers. **Video and stream
+frames are never persisted** — they are decoded, OCR'd, and the pixels discarded immediately; for
+those two sources only the extracted text survives. **Mobile report photos are different: they
+are now retained indefinitely.** This rule has moved twice — "photos are never stored at all" →
+"stored ~2 days, then auto-deleted" → (2026-09-14) "kept forever", to allow re-OCR with better
+models, abuse investigation, and training data. Much of the repo's older prose still says photos
+expire; treat that as stale and correct it when you touch it.
 
 Stack: FastAPI · SQLAlchemy 2 + psycopg3 · PostgreSQL · Jinja2 + Tailwind(CDN) + HTMX ·
 Ultralytics YOLOv8 · EasyOCR · OpenCV. CPU-only. Host runs Python 3.14; the Docker image runs
@@ -30,12 +32,13 @@ run_stream.bat rtsp://host/stream    :: ingest a live camera stream
 start_db.bat / stop_db.bat           :: portable Postgres (alternative to Docker)
 ```
 
-Schema is created/upgraded by idempotent scripts (run them after pulling, safe to re-run):
+Schema is created/upgraded by idempotent scripts (run them after pulling, safe to re-run).
+**Run every `scripts\migrate_*.py` present — never a hardcoded list** (new ones get added; `deploy.sh`
+globs them for the same reason). Current set is enumerated in COMMANDS.md.
 ```bat
 .venv\Scripts\python.exe scripts\init_db.py
-.venv\Scripts\python.exe scripts\migrate_report_fields.py
-.venv\Scripts\python.exe scripts\migrate_user_accounts.py
-.venv\Scripts\python.exe scripts\migrate_async_processing.py
+:: then each scripts\migrate_*.py  (report_fields, user_accounts, async_processing,
+::                                  body_type, material_type, driver_axle, ...)
 .venv\Scripts\python.exe scripts\create_user.py create --username asha --role telecaller --name "Asha"
 ```
 
@@ -43,6 +46,9 @@ Docker (same image is both web app and pipeline): `docker compose up -d` (db + w
 `docker compose --profile pipeline run --rm pipeline` (extraction — not part of `up`).
 
 **There is no test suite and no linter configured.** Don't claim tests pass; there are none to run.
+The one smoke check is `scripts\verify_db.py` — against a live Postgres it inserts synthetic rows,
+drives the FastAPI app through `TestClient`, and runs the still-image API on a real video frame.
+It mutates the target DB, so point `DATABASE_URL` at a scratch database, never prod.
 
 Config: `DATABASE_URL` (default `postgresql+psycopg://postgres:postgres@localhost:5432/trucks`)
 and `ADMIN_PASSWORD` (seeds/gates the admin account) are read from the environment. Tunable
@@ -59,8 +65,30 @@ extraction params (sampling FPS, YOLO confidence, OCR backend, tracker gaps) liv
   immediately; a background worker (`webapp/processing.py`) OCRs the photos one-at-a-time and
   updates the row. The mobile app polls `GET /api/trucks/{id}` until `processing_status` is
   `DONE`/`FAILED`. Photos live in pluggable storage (`pipeline/storage.py`: local files in dev,
-  GCS bucket + 2-day lifecycle in prod) and are read back by the worker. Because the photos are
-  persisted, the queue is durable — on startup the worker re-enqueues any unfinished rows.
+  a GCS bucket in prod) and are read back by the worker. Because the photos are persisted, the
+  queue is durable — on startup the worker re-enqueues any unfinished rows.
+
+**Photo expiry is bucket-level in prod, and there is no code path that enforces it.** Nothing in
+the app checks a photo's age: `GET /trucks/{id}/image/{idx}` simply 404s if the object is missing,
+and `image_keys` is never cleared. `GCSStorage.purge_expired()` is a hard `return 0`, so on the
+`gcs` backend `IMAGE_RETENTION_DAYS` is inert in both directions — it cannot delete anything, and
+a bucket lifecycle rule would delete objects no matter what it says. Retention in prod is changed
+only with `gcloud storage buckets update --lifecycle-file=...` (or `--clear-lifecycle`); the prod
+bucket has no rule today. `LocalStorage.purge_expired()` *does* delete, but only when
+`IMAGE_RETENTION_DAYS > 0`; it defaults to `0` (keep forever) and `webapp/processing.py` doesn't
+even start the sweeper thread unless a positive value is set on the local backend. **Don't add an
+age check in app code** — it would put expiry in two places that can silently disagree.
+
+**`source = image_api` does not always mean "a mobile report that went through OCR."** Two one-time
+bulk imports — `scripts/import_legacy_field_survey.py` (a team's manually-collected survey sheet)
+and `scripts/import_payment_report.py` (~3500 trips from an external ops/payment system) — also
+write `image_api` rows, because that's what puts them on the `/` broker page without a schema
+change. They are inserted already `VERIFIED`/`PASSED`/`DONE` so they bypass the telecaller `/review`
+queue (which exists to triage *unreviewed paid contributor* submissions), and they typically have no
+`image_keys` and no OCR provenance. So don't assume an `image_api` row has photos, a
+`processing_status` history, or a `reported_by_user_id`. The payment import is also what pushed the
+table past ~7000 rows (see the `/` caching note below); it fans one multi-leg trip into one row per
+distinct place on the route so a broker searching any stop finds the truck.
 
 **One shared extraction core.** `pipeline/extract.py::extract_truck_fields(event)` turns a closed
 `TruckEvent` into structured fields (plate, company, phone, website, type, city) using regex over
@@ -81,6 +109,20 @@ one event to several sinks.
 the truck leaves) → `extract` → sink. The image API (`pipeline/image_api.py`) reuses the *same*
 detect→plate→OCR chain but bypasses the tracker — it collapses up to 5 photos of one truck into a
 single `TruckEvent` directly.
+
+**Two small enrichment modules feed the broker view and are easy to miss:**
+- `pipeline/timestamps.py` — `detected_at` for a video sighting is **not** ingest time. It parses the
+  14-digit DVR timestamp out of the filename (`D01_20230331124308.mp4`) and adds the frame offset,
+  so "newest first" reflects when the truck was actually filmed. Falls back to `now()` for streams,
+  image uploads, and any filename without that pattern — so re-processing an unstamped old video
+  makes it look brand new on `/`.
+- `pipeline/geocode.py` — OpenStreetMap Nominatim, used **both ways** on mobile reports from
+  `pipeline/reports.py::reconcile`, each direction covering the other's missing half: coords → place
+  name when the app sends only GPS, and place name → coords when the reporter typed a location but
+  the app sent none (the Android "show on map" only reads lat/lng, so NULL coords break it). It's a
+  live third-party HTTP call with a ~1 req/sec usage cap — safe only because at most one direction
+  fires per report and it's already serialized behind the single OCR worker thread. Don't move it
+  into a parallel path or the request handler.
 
 **Three independent status dimensions on mobile reports — keep them distinct (don't conflate):**
 - `processing_status` (QUEUED / PROCESSING / DONE / FAILED): **machine job lifecycle**. Owned by
@@ -117,11 +159,19 @@ newest-first, click-to-call), `/review` telecaller queue (login required), JSON 
 `/api/*`, mobile auth under `/api/auth/*`. The newest-first paging query is the hot path —
 `detected_at` has a descending index. ML models are owned by the background worker
 (`webapp/processing.py::_Models`) and load lazily on the first queued report.
-`GET /trucks/{id}/image/{idx}` streams a stored report photo from storage (within the ~2-day
-window) — open to reviewers (telecaller/admin, for `/review` queue triage) and to the
+`GET /trucks/{id}/image/{idx}` streams a stored report photo from storage (404 only for photos
+uploaded before the 2026-09-14 retention change, which the old rule already deleted) — open to
+reviewers (telecaller/admin, for `/review` queue triage) and to the
 contributor who submitted the report (bearer token owner match on `reported_by_user_id`, so
 the mobile app can show back what was uploaded); 403 otherwise. Anonymous submissions have no
-owner and can't be fetched back this way.
+owner and can't be fetched back this way. `GET /api/auth/me/reports` is the contributor-facing
+history (own submissions + their review outcome — the reward-status screen in the app).
+`GET /report-test` renders `webapp/templates/report_test.html`, a plain browser form for submitting
+a field report end-to-end; it exists because Swagger UI can't do multi-file upload reliably, so it
+is the practical way to exercise the whole upload→queue→OCR→verify path by hand. Jinja templates
+live in `webapp/templates/` (`index`, `detail_panel`, `review`, `login`, `report_test`, `_nav`);
+Tailwind is the CDN build and HTMX drives the slide-over and queue actions, so there is no
+front-end build step — edit the template and reload.
 
 **`/` groups reports into broker leads; `/review` stays report-level — these are deliberately
 different units.** `webapp/broker_grouping.py::group_broker_rows()` collapses repeat sightings of
@@ -148,7 +198,7 @@ that truck's full sibling history (via a phone/plate lookup, not the list's curr
 in-memory queue and processes reports **one at a time** — deliberate, so two concurrent OCR
 passes can't OOM the 2 GB prod VM. The in-memory queue belongs to ONE uvicorn worker; the VM
 runs a single worker (Dockerfile CMD has no `--workers`). **Do not scale to multiple uvicorn
-workers** without moving to a shared queue. Run `scripts/migrate_async_processing.py` after pulling.
+workers** without moving to a shared queue.
 
 ## Reference docs
 
