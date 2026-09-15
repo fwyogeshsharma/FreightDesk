@@ -103,10 +103,16 @@ def find_by_identifier(s, identifier: str) -> Optional[User]:
 def create_user(s, password: str, phone: Optional[str] = None,
                 username: Optional[str] = None, display_name: Optional[str] = None,
                 role: str = "contributor", email: Optional[str] = None,
-                registration_source: Optional[str] = None) -> User:
+                registration_source: Optional[str] = None,
+                is_active: bool = True) -> User:
     """Create and flush a new user. Needs at least one login identity (phone for
     contributors, username for operators). Raises DuplicatePhone / DuplicateUsername /
-    ValueError on bad input."""
+    ValueError on bad input.
+
+    is_active defaults to True — an admin creating an operator (scripts/create_user.py)
+    has already vetted them. Self-service mobile registration is the one caller that
+    passes is_active=False, so a new contributor account needs admin approval
+    (PATCH /api/admin/users/{id}) before it can log in or submit reports."""
     ph = normalize_phone(phone) or None
     uname = normalize_username(username)
     if not ph and not uname:
@@ -127,6 +133,7 @@ def create_user(s, password: str, phone: Optional[str] = None,
         email=(email or "").strip() or None,
         role=role,
         registration_source=registration_source,
+        is_active=is_active,
     )
     s.add(user)
     s.flush()

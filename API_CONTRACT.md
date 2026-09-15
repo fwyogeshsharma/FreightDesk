@@ -27,6 +27,16 @@ after register/login and send it as `Authorization: Bearer <token>` on report su
 so rewards attribute to the right person. Tokens are long-lived (30 days); on `401` from
 `/api/auth/me`, send the user back through login.
 
+**New accounts start inactive (`is_active: false`) pending admin approval.** The register
+call still returns a token, but it won't resolve to anything until an admin approves the
+account — `/api/auth/me` and `/api/auth/me/reports` return `401`, `/api/auth/login` returns
+`401` (same message as a wrong password — the API doesn't distinguish "pending" from
+"wrong credentials"), and a report submitted with that token is silently accepted as an
+**anonymous** submission instead of an attributed one (submitting itself was never
+auth-gated — see **Auth: optional** above). Once approved, the *same* stored token starts
+working with no new login needed. There's no polling endpoint for approval status in this
+contract yet — retry login (or `/api/auth/me`) periodically, or `409`/`401` → re-prompt.
+
 | Method / URL | Body (JSON) | Returns |
 |---|---|---|
 | `POST /api/auth/register` | `{ "phone", "password", "display_name"?, "email"? }` | `201` `{ "token", "user" }` |

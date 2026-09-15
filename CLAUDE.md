@@ -152,6 +152,20 @@ wins over an ambient cookie. Only `telecaller`/`admin` may sign into the web `/r
 Passwords are stdlib PBKDF2-HMAC-SHA256 (no third-party crypto dep). `auth` helpers flush but
 **never commit** — the caller (request handler) owns the transaction.
 
+**`is_active` gates everything session-based, and self-registered contributors start with it
+`False`.** `pipeline/auth.py::create_user()` defaults `is_active=True` (an admin creating an
+operator via `scripts/create_user.py` has already vetted them, and `ensure_seed_admin`'s bootstrap
+account needs to work immediately) — the one caller that overrides it is `POST /api/auth/register`,
+which passes `is_active=False` so a new contributor needs an admin to approve them
+(`PATCH /api/admin/users/{id}` with `{"is_active": true}`, admin-role only — see `require_admin`)
+before the account is usable. Enforcement is centralized, not scattered: `authenticate()` and
+`resolve_session()` both re-check `is_active` on every call, so a pending/blocked account can never
+log in and an *existing* session token stops resolving on its very next request the moment
+`is_active` flips to `False` — no separate revocation step. The one endpoint that doesn't sit
+behind session auth at all, `POST /api/trucks/report` (see below), explicitly re-checks the typed
+`phone_number` against `users` for this same reason — otherwise a pending/blocked account could
+just drop its token and submit anonymously, since the endpoint has no hard login requirement.
+
 **Process/engine model (important for the parallel pipeline):** the SQLAlchemy engine is process-
 local and **must never cross a fork/spawn boundary**. Workers are spawned with `mp.get_context("spawn")`
 and each calls `pipeline/db.py::reset_engine()` before building its own engine. In `--workers N`

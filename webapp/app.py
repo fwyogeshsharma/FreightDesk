@@ -437,17 +437,19 @@ async def report(
     from pipeline import db_writer
     from webapp import processing
 
-    # This endpoint has no hard login requirement (see get_current_user use below), so a
-    # blocked contributor could otherwise just drop their token and keep submitting
-    # anonymously. Check the typed phone itself against a blocked (is_active=False)
-    # account so disabling a contributor actually stops their submissions. A blank
+    # This endpoint has no hard login requirement (see get_current_user use below), so an
+    # inactive account (abuse-blocked, or a brand-new contributor still awaiting admin
+    # approval — registration creates accounts with is_active=False) could otherwise just
+    # drop its token and keep submitting anonymously. Check the typed phone itself against
+    # the users table so is_active=False actually stops submissions either way. A blank
     # phone_number can't match any account, so this is a no-op when none is given.
     if phone_number and phone_number.strip():
         Session = get_session_factory()
         with Session() as s:
-            blocked = auth.find_by_phone(s, phone_number)
-            if blocked and not blocked.is_active:
-                raise HTTPException(403, "This account has been blocked")
+            inactive = auth.find_by_phone(s, phone_number)
+            if inactive and not inactive.is_active:
+                raise HTTPException(
+                    403, "This account is not active yet — contact an admin")
     if not images:
         raise HTTPException(400, "At least one photo is required")
     if len(images) > MAX_IMAGES:
@@ -549,9 +551,15 @@ def api_register(body: RegisterIn):
     Session = get_session_factory()
     with Session() as s:
         try:
+            # New contributors start inactive — an admin must approve them
+            # (PATCH /api/admin/users/{id}) before the account can log in or the
+            # bearer token below actually resolves to anything (resolve_session()
+            # re-checks is_active on every request, so no separate step is needed
+            # once approved — this same token just starts working).
             user = auth.create_user(
                 s, body.password, phone=body.phone, display_name=body.display_name,
-                email=body.email, role="contributor", registration_source="mobile")
+                email=body.email, role="contributor", registration_source="mobile",
+                is_active=False)
         except auth.DuplicatePhone:
             raise HTTPException(409, "An account with this phone already exists")
         except ValueError as e:
