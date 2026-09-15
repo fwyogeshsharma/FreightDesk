@@ -185,6 +185,19 @@ def require_reviewer(request: Request) -> Reviewer:
     raise HTTPException(403, "Reviewer access required")
 
 
+def require_admin(request: Request) -> Reviewer:
+    """Dependency for user-account admin endpoints (list/approve users). Deliberately
+    narrower than require_reviewer: role must be exactly 'admin', not 'telecaller' —
+    account management is a different power than report review. Also accepts the
+    legacy X-Admin-Token == ADMIN_PASSWORD for automation. 403 otherwise."""
+    user = get_current_user(request)
+    if user and user.role == "admin":
+        return Reviewer(_display_name(user), user.id)
+    if _legacy_admin_token_ok(request.headers.get("X-Admin-Token") or ""):
+        return Reviewer(ADMIN_USER, None)
+    raise HTTPException(403, "Admin access required")
+
+
 def _nav_user(user: Optional[CurrentUser]) -> Optional[dict]:
     """Shape the logged-in user for the shared nav (_nav.html)."""
     if not user:
@@ -385,8 +398,8 @@ def truck_panel(request: Request, truck_id: int):
 async def report(
     request: Request,
     images: List[UploadFile] = File(...),
-    phone_number: str = Form(...),
     _creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+    phone_number: Optional[str] = Form(None),
     vehicle_number: Optional[str] = Form(None),
     loaded_status: Optional[str] = Form(None),
     body_type: Optional[str] = Form(None),
@@ -412,6 +425,10 @@ async def report(
     so a row becomes VERIFIED only when the photos confirm the typed vehicle number;
     otherwise it stays UNVERIFIED with a reason. Every submission is logged
     (submission_log) for abuse review.
+
+    phone_number is optional — a report with none just has no callable contact number
+    (same as a video/stream sighting that fails the require_phone gate), so a telecaller
+    may not be able to act on it, but it's still stored and still goes through review.
     """
     import cv2
     import numpy as np
@@ -420,8 +437,17 @@ async def report(
     from pipeline import db_writer
     from webapp import processing
 
-    if not phone_number or not phone_number.strip():
-        raise HTTPException(400, "phone_number is required")
+    # This endpoint has no hard login requirement (see get_current_user use below), so a
+    # blocked contributor could otherwise just drop their token and keep submitting
+    # anonymously. Check the typed phone itself against a blocked (is_active=False)
+    # account so disabling a contributor actually stops their submissions. A blank
+    # phone_number can't match any account, so this is a no-op when none is given.
+    if phone_number and phone_number.strip():
+        Session = get_session_factory()
+        with Session() as s:
+            blocked = auth.find_by_phone(s, phone_number)
+            if blocked and not blocked.is_active:
+                raise HTTPException(403, "This account has been blocked")
     if not images:
         raise HTTPException(400, "At least one photo is required")
     if len(images) > MAX_IMAGES:
@@ -634,6 +660,51 @@ def patch_truck(truck_id: int, body: ReviewPatch,
         row.review_note = (body.review_note or "").strip() or None
         s.commit()
         return JSONResponse(row.as_dict())
+
+
+# ── User-account admin: list + approve/block (admin-only auth) ─────────────────────
+
+@app.get("/api/admin/users")
+def api_admin_list_users(is_active: Optional[bool] = None, role: Optional[str] = None,
+                         limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0),
+                         _admin: Reviewer = Depends(require_admin)):
+    """List user accounts, newest first. Filter with ?is_active=false to find accounts
+    (typically contributors) awaiting approval, and/or ?role=contributor|telecaller|admin."""
+    if role is not None and role not in auth.ROLES:
+        raise HTTPException(400, f"role must be one of {auth.ROLES}")
+    filters = []
+    if is_active is not None:
+        filters.append(User.is_active == is_active)
+    if role is not None:
+        filters.append(User.role == role)
+    Session = get_session_factory()
+    with Session() as s:
+        total = s.execute(select(func.count()).select_from(User).where(*filters)).scalar_one()
+        rows = s.execute(select(User).where(*filters).order_by(User.created_at.desc())
+                         .limit(limit).offset(offset)).scalars().all()
+        users = [u.as_dict() for u in rows]
+    return JSONResponse({"total": total, "limit": limit, "offset": offset, "users": users})
+
+
+class UserActivationPatch(BaseModel):
+    is_active: bool
+
+
+@app.patch("/api/admin/users/{user_id}")
+def api_admin_patch_user(user_id: int, body: UserActivationPatch,
+                         _admin: Reviewer = Depends(require_admin)):
+    """Approve (is_active=true) or block (is_active=false) a user account. Blocking
+    takes effect immediately: resolve_session()/authenticate() in pipeline/auth.py
+    already refuse a disabled user, so their existing session/token stops working on
+    its very next request without any separate revocation step."""
+    Session = get_session_factory()
+    with Session() as s:
+        user = s.get(User, user_id)
+        if not user:
+            raise HTTPException(404, "User not found")
+        user.is_active = body.is_active
+        s.commit()
+        return JSONResponse(user.as_dict())
 
 
 @app.get("/trucks/{truck_id}/image/{idx}")

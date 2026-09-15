@@ -136,7 +136,12 @@ single `TruckEvent` directly.
 
 Every mobile report also writes a `submission_log` row (audit trail for spotting reward farming).
 `require_phone=True` on the video/stream DB writer drops sightings with no callable number (a
-telecaller can't act on them); mobile reports require a phone at the API layer instead.
+telecaller can't act on them). Mobile reports don't have an equivalent gate — as of 2026-09-15
+`phone_number` is optional on `POST /api/trucks/report`; a report submitted with none is still
+stored and still goes through review, it just has no callable number (same practical effect as a
+video/stream sighting that failed `require_phone`, just not dropped since a human already typed
+the rest of the report). `phone_number` blank is still checked against the `users` table for a
+blocked (`is_active=False`) account when one *is* given — see the auth section above.
 
 **Auth (`pipeline/auth.py`, `webapp/app.py`):** one `users` table for everyone — external mobile
 *contributors* (self-register by phone, role `contributor`) and internal *operators* (created by

@@ -65,7 +65,7 @@ curl -X POST http://localhost:8000/api/trucks/report \
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `images` | file × **1–5** | ✅ yes | Repeat the part once per photo (same field name `images`). Max 5. JPEG/PNG. |
-| `phone_number` | string | ✅ yes | Phone the user read on the truck (10-digit Indian mobile). |
+| `phone_number` | string | optional | Phone the user read on the truck (10-digit Indian mobile). Omitting it doesn't block the submission — the report is still stored and reviewed — but a telecaller has no number to call, same as a video/stream sighting with no readable phone. |
 | `vehicle_number` | string | optional | Number plate the user read, e.g. `RJ14CA1234`. |
 | `loaded_status` | string | optional | `loaded` or `unloaded`. |
 | `body_type` | string | optional | One of the app's fixed body-type options, e.g. `Container`. Stored verbatim — the app owns the choice list, the server does not validate it against an enum. |
@@ -180,8 +180,9 @@ Validation still happens **synchronously** on the POST (before the `202`), so th
 
 | Status | When | Body |
 |---|---|---|
-| `400 Bad Request` | `phone_number` blank, more than 5 images, or no image was decodable | `{ "detail": "phone_number is required" }` (message varies) |
-| `422 Unprocessable Entity` | A required field is missing entirely (`images` or `phone_number` not sent) | `{ "detail": [ { "loc": ["body","phone_number"], "msg": "field required", ... } ] }` |
+| `400 Bad Request` | More than 5 images, or no image was decodable | `{ "detail": "At most 5 photos per truck" }` (message varies) |
+| `403 Forbidden` | `phone_number` (if given) belongs to a blocked account (`is_active=false`) — checked even if no bearer token is sent | `{ "detail": "This account has been blocked" }` |
+| `422 Unprocessable Entity` | `images` not sent at all (the only required field) | `{ "detail": [ { "loc": ["body","images"], "msg": "field required", ... } ] }` |
 
 A photo that fails OCR *after* acceptance does **not** error the request — the record is stored
 and ends up `processing_status: FAILED` (if no image was usable) or `DONE` + `UNVERIFIED`.
