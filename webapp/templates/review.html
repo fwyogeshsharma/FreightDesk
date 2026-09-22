@@ -144,6 +144,11 @@
                 </span>
               </a>
             {% endmacro %}
+            {% set EDIT_LABELS = {
+                 "license_plate": "Vehicle", "phone_number": "Phone", "driver_name": "Driver",
+                 "company_name": "Company", "loaded_status": "Load", "num_wheels": "Wheels",
+                 "body_type": "Body", "material_type": "Material", "axle_type": "Axle",
+                 "location": "Location"} %}
             <tbody class="divide-y divide-slate-100">
               {% for t in reports %}
               <tr id="row-{{ t.id }}" class="even:bg-slate-50/40 align-middle"
@@ -192,7 +197,12 @@
                           <span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200" title="Automatic system check — not a human decision">⚠ System Unverified</span>
                         {% endif %}
                       </div>
-                      <div class="text-[11px] text-slate-400 tnum">#{{ t.id }} · {{ t.time_ago }}</div>
+                      <div class="text-[11px] text-slate-400 tnum">#{{ t.id }} · {{ t.time_ago }}
+                        {% if t.edit_history %}
+                          · <span class="text-indigo-600 font-medium cursor-help"
+                                  title="{% for e in t.edit_history %}{{ (e.at or '')[:16] | replace('T', ' ') }} UTC · {{ e.by }}&#10;{% for f, ch in e.changes.items() %}  {{ EDIT_LABELS.get(f, f) }}: {{ ch[0] if ch[0] is not none else '—' }} → {{ ch[1] if ch[1] is not none else '—' }}&#10;{% endfor %}{% endfor %}">✎ edited</span>
+                        {% endif %}
+                      </div>
                     </div>
                   </div>
                 </td>
@@ -255,6 +265,28 @@
                     {% elif t.review_status=='REJECTED' %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-red-600 text-white">Rejected</span>
                     {% else %}<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600">Pending</span>{% endif %}
                     <div class="inline-flex gap-1">
+                      {# Edit only while undecided (a PASSED report is reward-eligible —
+                         its data must stay what it was decided on), and not while OCR is
+                         still running: the worker rewrites the typed fields when it
+                         finishes, so an edit made meanwhile would be lost. The server
+                         enforces both rules too (PATCH /api/trucks/{id}/fields -> 409). #}
+                      {% if (t.review_status or 'PENDING') == 'PENDING' %}
+                        {% if t.processing_status in ('QUEUED','PROCESSING') %}
+                          <button type="button" disabled
+                                  class="bg-white text-slate-300 border border-slate-200 text-[13px] font-semibold px-3 py-1.5 rounded-md cursor-not-allowed"
+                                  title="Available once OCR processing finishes">✎ Edit</button>
+                        {% else %}
+                          {% set edit_data = {
+                               "id": t.id, "label": t.license_plate or ('#' ~ t.id),
+                               "license_plate": t.license_plate, "phone_number": t.phone_number,
+                               "driver_name": t.driver_name, "company_name": t.company_name,
+                               "loaded_status": t.loaded_status, "num_wheels": t.num_wheels,
+                               "body_type": t.body_type, "material_type": t.material_type,
+                               "axle_type": t.axle_type, "location": t.location} %}
+                          <button type="button" data-edit='{{ edit_data | tojson }}' onclick="openEdit(this)"
+                                  class="bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-[13px] font-semibold px-3 py-1.5 rounded-md transition-colors">✎ Edit</button>
+                        {% endif %}
+                      {% endif %}
                       <button onclick="decide({{ t.id }},'PASSED')" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[13px] font-semibold px-3 py-1.5 rounded-md transition-colors">✓ Pass</button>
                       <button onclick="openReject({{ t.id }}, '{{ t.license_plate or ('#' ~ t.id) }}')" class="bg-white hover:bg-red-50 text-red-600 border border-red-200 text-[13px] font-semibold px-3 py-1.5 rounded-md transition-colors">✗ Reject</button>
                     </div>
@@ -282,6 +314,60 @@
   <!-- Extra phone numbers popover (single, body-level so it escapes the table stacking) -->
   <div id="phone-pop" onclick="event.stopPropagation()"
        class="hidden fixed z-50 bg-white border border-slate-200 rounded-lg shadow-xl p-2 min-w-[12rem] space-y-1"></div>
+
+  <!-- Edit report modal -->
+  <div id="edit-modal" class="hidden fixed inset-0 z-50 items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+       onclick="if(event.target===this)closeEdit()">
+    <form onsubmit="saveEdit(); return false;"
+          class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 flex flex-col gap-4 max-h-[92vh] overflow-y-auto">
+      <div>
+        <h2 class="font-bold text-lg leading-tight">Edit report <span id="edit-label" class="font-mono text-slate-500"></span></h2>
+        <p class="text-sm text-slate-500 mt-0.5">Changes are logged with your name. The system verification badge is not recalculated — it stays the check of what the contributor submitted.</p>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+        <label class="block sm:col-span-2"><span class="font-medium">Vehicle number</span>
+          <input id="edit-license_plate" maxlength="32" autocomplete="off"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 font-mono uppercase focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block sm:col-span-2"><span class="font-medium">Phone number</span>
+          <span class="text-slate-400 font-normal">— separate several with ;</span>
+          <input id="edit-phone_number" maxlength="128" inputmode="tel" autocomplete="off"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 font-mono focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Driver name</span>
+          <input id="edit-driver_name" maxlength="128"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Company</span>
+          <input id="edit-company_name" maxlength="255"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Load</span>
+          <select id="edit-loaded_status"
+                  class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-slate-300">
+            <option value="">—</option><option value="LOADED">Loaded</option><option value="UNLOADED">Unloaded</option>
+          </select></label>
+        <label class="block"><span class="font-medium">Wheels</span>
+          <input id="edit-num_wheels" type="number" min="2" max="64" step="1"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Body type</span>
+          <input id="edit-body_type" maxlength="32"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Material</span>
+          <input id="edit-material_type" maxlength="64"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Axle</span>
+          <input id="edit-axle_type" maxlength="32"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Location</span>
+          <input id="edit-location" maxlength="255"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+      </div>
+      <p id="edit-error" class="hidden text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2"></p>
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="closeEdit()"
+          class="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 font-medium transition-colors">Cancel</button>
+        <button id="edit-save" type="submit"
+          class="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-700 text-white font-semibold transition-colors disabled:opacity-50">Save changes</button>
+      </div>
+    </form>
+  </div>
 
   <!-- Reject confirmation modal -->
   <div id="reject-modal" class="hidden fixed inset-0 z-50 items-center justify-center bg-black/50 backdrop-blur-sm p-4"
@@ -401,7 +487,76 @@
       if (id != null) decide(id, "REJECTED", note);
     }
 
-    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeReject(); closePhonePops(); } });
+    // ── Edit ──────────────────────────────────────────────────────────────────
+    const EDIT_FIELDS = ["license_plate", "phone_number", "driver_name", "company_name",
+                         "loaded_status", "num_wheels", "body_type", "material_type",
+                         "axle_type", "location"];
+    let _editId = null, _editOrig = null;
+
+    function _editErr(msg) {
+      const el = document.getElementById("edit-error");
+      el.textContent = msg || "";
+      el.classList.toggle("hidden", !msg);
+    }
+
+    function openEdit(btn) {
+      let d;
+      try { d = JSON.parse(btn.getAttribute("data-edit") || "{}"); } catch (_) { return; }
+      _editId = d.id; _editOrig = d;
+      for (const f of EDIT_FIELDS) {
+        document.getElementById("edit-" + f).value = d[f] == null ? "" : String(d[f]);
+      }
+      document.getElementById("edit-label").textContent = d.label || ("#" + d.id);
+      document.getElementById("edit-save").disabled = false;
+      _editErr("");
+      const m = document.getElementById("edit-modal");
+      m.classList.remove("hidden"); m.classList.add("flex");
+      setTimeout(() => document.getElementById("edit-license_plate").focus(), 50);
+    }
+
+    function closeEdit() {
+      const m = document.getElementById("edit-modal");
+      m.classList.add("hidden"); m.classList.remove("flex");
+      _editId = null; _editOrig = null;
+    }
+
+    async function saveEdit() {
+      if (_editId == null) return;
+      // Send only what actually changed, so edit_history records real corrections
+      // and an untouched field is never rewritten.
+      const body = {};
+      for (const f of EDIT_FIELDS) {
+        const v = document.getElementById("edit-" + f).value.trim();
+        const orig = _editOrig[f] == null ? "" : String(_editOrig[f]);
+        if (v === orig) continue;
+        body[f] = f === "num_wheels" ? (v === "" ? null : parseInt(v, 10)) : v;
+      }
+      if (!Object.keys(body).length) { closeEdit(); return; }
+
+      const save = document.getElementById("edit-save");
+      save.disabled = true;
+      _editErr("");
+      try {
+        const res = await fetch("/api/trucks/" + _editId + "/fields", {
+          method: "PATCH",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(body),
+        });
+        if (res.ok) { location.reload(); return; }
+        let msg = "Save failed (" + res.status + ")";
+        try {
+          const j = await res.json();
+          if (typeof j.detail === "string") msg = j.detail;
+          else if (Array.isArray(j.detail) && j.detail[0] && j.detail[0].msg) msg = j.detail[0].msg;
+        } catch (_) {}
+        _editErr(msg);
+      } catch (_) {
+        _editErr("Network error — changes were not saved.");
+      }
+      save.disabled = false;
+    }
+
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeEdit(); closeReject(); closePhonePops(); } });
   </script>
 </body>
 </html>

@@ -670,6 +670,117 @@ def patch_truck(truck_id: int, body: ReviewPatch,
         return JSONResponse(row.as_dict())
 
 
+# ── Telecaller edit: correct a PENDING report's fields before deciding ─────────────
+
+# What a reviewer may correct: the fields the contributor typed, plus company_name
+# (OCR-filled, and a telecaller who has phoned the driver often knows it better).
+# Value = max length, or None for the one integer field. Deliberately NOT editable:
+# provenance (reported_by*, reporter_phone, phone_reported — the contributor's
+# original number stays there even when phone_number is corrected), machine output
+# (verification_status, plate_confidence, phone_ocr, plate_candidates, body_texts),
+# GPS evidence (latitude/longitude), photos, and review_status (Pass/Reject owns it).
+_EDITABLE_FIELDS = {
+    "license_plate": 32, "phone_number": 128, "driver_name": 128, "company_name": 255,
+    "loaded_status": 16, "body_type": 32, "material_type": 64, "axle_type": 32,
+    "location": 255, "num_wheels": None,
+}
+
+
+class ReportEdit(BaseModel):
+    # extra="forbid": a request trying to set anything outside the whitelist (say,
+    # verification_status) is rejected outright rather than silently ignored.
+    model_config = {"extra": "forbid"}
+    license_plate: Optional[str] = None
+    phone_number: Optional[str] = None
+    driver_name: Optional[str] = None
+    company_name: Optional[str] = None
+    loaded_status: Optional[str] = None
+    body_type: Optional[str] = None
+    material_type: Optional[str] = None
+    axle_type: Optional[str] = None
+    location: Optional[str] = None
+    num_wheels: Optional[int] = None
+
+
+def _clean_edit_value(field: str, value):
+    """Normalize one submitted value the way the report path stores it; blank -> None.
+    Raises HTTPException(400) on a value that could not have come from a real report."""
+    if field == "num_wheels":
+        if value is None:
+            return None
+        if not 2 <= value <= 64:
+            raise HTTPException(400, "num_wheels must be between 2 and 64")
+        return value
+    v = (value or "").strip()
+    if not v:
+        return None
+    if field == "license_plate":
+        v = re.sub(r"\s+", "", v).upper()
+    elif field == "loaded_status":
+        v = v.upper()
+        if v not in ("LOADED", "UNLOADED"):
+            raise HTTPException(400, "loaded_status must be LOADED or UNLOADED")
+    elif field == "phone_number":
+        # Same shape the report path stores: digits only, several numbers "; "-joined.
+        parts = [re.sub(r"\D", "", p) for p in re.split(r"[;,/]", v)]
+        parts = [p for p in parts if p]
+        if not parts or any(len(p) < 10 for p in parts):
+            raise HTTPException(400, "each phone number needs at least 10 digits")
+        v = "; ".join(parts)
+    limit = _EDITABLE_FIELDS[field]
+    if limit and len(v) > limit:
+        raise HTTPException(400, f"{field} is longer than {limit} characters")
+    return v
+
+
+@app.patch("/api/trucks/{truck_id}/fields")
+def edit_report_fields(truck_id: int, body: ReportEdit,
+                       reviewer: Reviewer = Depends(require_reviewer)):
+    """Correct a mobile report's fields before a decision. Only fields present in the
+    body are touched; every actual change is appended to edit_history.
+
+    Refused (409) once the report is PASSED or REJECTED — the decision was made on the
+    data as it stood, and PASSED is what makes the contributor reward-eligible — and
+    while OCR is still QUEUED/PROCESSING, because the worker snapshots the typed fields
+    when it starts and writes them all back when it finishes (finalize_report), which
+    would silently overwrite an edit made in between."""
+    submitted = body.model_dump(exclude_unset=True)
+    if not submitted:
+        raise HTTPException(400, "no fields to update")
+    cleaned = {f: _clean_edit_value(f, v) for f, v in submitted.items()}
+
+    Session = get_session_factory()
+    with Session() as s:
+        # Row lock: a concurrent Pass/Reject can't slip in between the status check
+        # below and this write.
+        row = s.get(Truck, truck_id, with_for_update=True)
+        if not row:
+            raise HTTPException(404, "Truck not found")
+        if row.source != SourceType.image_api:
+            raise HTTPException(400, "only mobile field reports can be edited")
+        if (row.review_status or "PENDING") != "PENDING":
+            raise HTTPException(409, f"report is already {row.review_status.lower()}; "
+                                     "only pending reports can be edited")
+        if row.processing_status in ("QUEUED", "PROCESSING"):
+            raise HTTPException(409, "OCR is still processing this report; "
+                                     "edit it once processing finishes")
+
+        changes = {}
+        for field, new in cleaned.items():
+            old = getattr(row, field)
+            if old != new:
+                changes[field] = [old, new]
+                setattr(row, field, new)
+        if changes:
+            entry = {"at": datetime.now(timezone.utc).isoformat(), "by": reviewer.name,
+                     "by_user_id": reviewer.user_id, "changes": changes}
+            # Reassign rather than append in place: a plain JSONB column doesn't
+            # track in-place list mutation, so .append() would never be flushed.
+            row.edit_history = list(row.edit_history or []) + [entry]
+            s.commit()
+        return JSONResponse(row.as_dict())
+
+
 # ── User-account admin: list + approve/block (admin-only auth) ─────────────────────
 
 @app.get("/api/admin/users")

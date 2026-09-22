@@ -114,6 +114,15 @@ class Truck(Base):
     # retention change may point at objects the old ~2-day rule already deleted.
     image_keys: Mapped[Optional[list]] = mapped_column(JSONB)
 
+    # Telecaller edits to a PENDING report's fields, oldest first — one entry per save:
+    #   {"at": iso, "by": name, "by_user_id": id, "changes": {field: [old, new], ...}}
+    # Kept because an edit overwrites the contributor's typed value in place, and
+    # contributors are paid per PASSED report: without this, correcting a wrong plate
+    # and then passing it would erase the only evidence the submission was wrong.
+    # verification_status is deliberately NOT recomputed on edit — it stays the
+    # machine's verdict on what the contributor actually submitted.
+    edit_history: Mapped[Optional[list]] = mapped_column(JSONB)
+
     # Full audit data for the detail view.
     plate_candidates: Mapped[Optional[dict]] = mapped_column(JSONB)
     body_texts: Mapped[Optional[list]] = mapped_column(JSONB)
@@ -169,6 +178,7 @@ class Truck(Base):
             "processing_error": self.processing_error,
             "processed_at": self.processed_at.isoformat() if self.processed_at else None,
             "image_keys": self.image_keys,
+            "edit_history": self.edit_history,
             "plate_candidates": self.plate_candidates,
             "body_texts": self.body_texts,
             "image_path": self.image_path,

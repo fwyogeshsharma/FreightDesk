@@ -144,6 +144,21 @@ the rest of the report). `phone_number` blank is still checked against the `user
 blocked (`is_active=False`) account when one *is* given — see the auth section above.
 
 **Auth (`pipeline/auth.py`, `webapp/app.py`):** one `users` table for everyone — external mobile
+**Reviewers can correct a report's fields before deciding** (`/review` → Edit, backed by
+`PATCH /api/trucks/{id}/fields`, a separate endpoint from the Pass/Reject PATCH). Only a
+whitelisted set of typed fields is editable (`_EDITABLE_FIELDS` in `webapp/app.py`); provenance,
+GPS, photos and all machine output are not. Three rules, all enforced server-side (409), not just
+by hiding the button: (1) only while `review_status` is PENDING — a decision is made on the data
+as it stood; (2) never while `processing_status` is QUEUED/PROCESSING, because the worker snapshots
+the typed fields when it *starts* (`reported_from_row`) and writes them all back when it finishes
+(`finalize_report`), silently overwriting any edit made in between; (3) **`verification_status` is
+not recomputed** — it stays the machine's verdict on what the contributor actually submitted, so a
+telecaller "fixing" a wrong plate can't launder an UNVERIFIED report into a VERIFIED, paid one.
+Every change is appended to `trucks.edit_history` (JSONB: who, when, field → [old, new]) because the
+edit overwrites the contributor's value in place; `phone_reported` also keeps their original number.
+One gap to know about: requeuing an edited report re-runs `reconcile` on the *edited* plate as if the
+contributor had typed it — `edit_history` is then the only record of what they actually sent.
+
 *contributors* (self-register by phone, role `contributor`) and internal *operators* (created by
 admin via `scripts/create_user.py`, role `telecaller`/`admin`). Login id is phone for contributors,
 username for operators. One `user_sessions` table backs **both** the web session cookie and the
