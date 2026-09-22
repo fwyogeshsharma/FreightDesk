@@ -244,6 +244,13 @@ passes can't OOM the 2 GB prod VM. The in-memory queue belongs to ONE uvicorn wo
 runs a single worker (Dockerfile CMD has no `--workers`). **Do not scale to multiple uvicorn
 workers** without moving to a shared queue.
 
+`FAILED` is terminal: `recover_pending()` only re-queues QUEUED/PROCESSING rows on startup. To retry
+reports that failed for a transient reason, run `scripts/requeue_failed_reports.py` (dry run, then
+`--apply`) and **restart the web container** — the script runs in its own container, so it can only
+flip rows to QUEUED; the running worker's in-memory queue only learns about them on restart. If
+reports sit QUEUED with *nothing* PROCESSING, the worker isn't running: check the logs for
+`OCR worker started` (Sept 2026 outage: a startup exception skipped `start_worker()` for 8 days).
+
 ## Reference docs
 
 - **`COMMANDS.md`** — operational cheat sheet (run/deploy/operate the prod VM, account mgmt, psql).
