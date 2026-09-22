@@ -149,6 +149,13 @@ def _worker_loop() -> None:
         truck_id = _q.get()
         try:
             process_truck(truck_id)
+        except Exception:
+            # process_truck marks a report FAILED for anything inside its OCR block,
+            # but its row-loading preamble is outside that — an exception there used to
+            # propagate here and kill this (only) worker thread for good, leaving every
+            # later report QUEUED. And recover_pending re-enqueues by id, so the same
+            # row would kill it again on every restart. Log and move on instead.
+            log.exception("worker: unhandled error on report %s; continuing", truck_id)
         finally:
             _q.task_done()
 

@@ -90,19 +90,34 @@ templates.env.filters["phones"] = _phone_list
 
 @app.on_event("startup")
 def _startup():
+    # Each step is isolated: a failure in one must never stop the next. They used to
+    # share one try, so when ensure_seed_admin raised, start_worker() was skipped and
+    # the OCR worker silently never ran — the site kept serving pages, so nothing
+    # looked wrong while every mobile report sat QUEUED for 8 days. The worker is the
+    # step that matters most, so it goes last but runs regardless.
+    import logging
+    log = logging.getLogger("freightdesk.startup")
+
     # Create the tables if they aren't there yet; browsing an empty DB still works.
     try:
         init_db()
-        # Make sure an admin exists so a fresh deploy is immediately usable.
+    except Exception:
+        log.exception("startup: init_db failed")
+    # Make sure an admin exists so a fresh deploy is immediately usable.
+    try:
         Session = get_session_factory()
         with Session() as s:
             auth.ensure_seed_admin(s)
             s.commit()
-        # Start the background OCR worker and recover any unfinished report jobs.
+    except Exception:
+        log.exception("startup: ensure_seed_admin failed")
+    # Start the background OCR worker and recover any unfinished report jobs.
+    try:
         from webapp import processing
         processing.start_worker()
-    except Exception as e:  # pragma: no cover - surfaced in logs
-        print(f"[webapp] WARNING: startup issue: {e}")
+    except Exception:
+        log.critical("startup: OCR WORKER NOT STARTED - mobile reports will stay QUEUED",
+                     exc_info=True)
 
 
 # ── Auth: unified user accounts (mobile bearer + web cookie) ─────────────────────

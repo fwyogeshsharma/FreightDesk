@@ -198,7 +198,11 @@ def ensure_seed_admin(s) -> Optional[User]:
     from env: ADMIN_USERNAME (default = ADMIN_USER, e.g. 'admin') + ADMIN_PASSWORD. If a
     user with that username already exists it is promoted to admin; otherwise one is
     created. Returns the admin, or None if one already existed."""
-    if s.execute(select(User).where(User.role == "admin")).scalar_one_or_none():
+    # "Is there at least one admin?" — NOT scalar_one_or_none(), which raises once a
+    # second admin exists. That raise happened inside the app's startup hook and
+    # silently stopped the OCR worker from ever starting (Sept 2026: 8 days of
+    # reports left QUEUED). Any number of admins is legitimate.
+    if s.execute(select(User.id).where(User.role == "admin").limit(1)).first():
         return None
     username = normalize_username(
         os.environ.get("ADMIN_USERNAME") or os.environ.get("ADMIN_USER") or "admin")
