@@ -19,21 +19,20 @@ Your environment values are filled in already:
 
 ## 1. Local development (Windows laptop)
 
+Start everything (full walkthrough, first-time setup and troubleshooting: **README.md → Run locally**):
 ```bat
-start_db.bat                         :: start the portable Postgres (only if not using Docker)
-run_webapp.bat                       :: start the web app -> http://localhost:8000 (auto-reloads on edits)
-```
-Create / upgrade the local database schema (from the project folder):
-```bat
+:: Docker Desktop must be running first
+docker compose up -d db                                 :: Postgres (127.0.0.1:5432)
 .venv\Scripts\python.exe scripts\init_db.py
-.venv\Scripts\python.exe scripts\migrate_report_fields.py
-.venv\Scripts\python.exe scripts\migrate_user_accounts.py
-.venv\Scripts\python.exe scripts\migrate_async_processing.py
-.venv\Scripts\python.exe scripts\migrate_body_type.py
-.venv\Scripts\python.exe scripts\migrate_material_type.py
-.venv\Scripts\python.exe scripts\migrate_driver_axle.py
+.venv\Scripts\python.exe scripts\run_migrations.py      :: applies only migrations not yet applied
+run_webapp.bat                                          :: web app -> http://localhost:8000 (auto-reloads)
 ```
-(Or run every `scripts\migrate_*.py` file present — new ones are added occasionally.)
+`run_migrations.py` discovers every `scripts\migrate_*.py` itself and records what it has applied
+in a `schema_migrations` table, so it's instant when nothing is new — run it after every pull.
+`--list` shows applied/pending without changing anything.
+
+No Docker? `start_db.bat` / `stop_db.bat` run a portable Postgres instead (needs the Windows
+Postgres binaries extracted into `pgsql\`).
 Process a video locally (into the local DB):
 ```bat
 run.bat --input videos --sink db          :: whole videos\ folder

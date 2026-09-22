@@ -32,15 +32,25 @@ run_stream.bat rtsp://host/stream    :: ingest a live camera stream
 start_db.bat / stop_db.bat           :: portable Postgres (alternative to Docker)
 ```
 
-Schema is created/upgraded by idempotent scripts (run them after pulling, safe to re-run).
-**Run every `scripts\migrate_*.py` present — never a hardcoded list** (new ones get added; `deploy.sh`
-globs them for the same reason). Current set is enumerated in COMMANDS.md.
+Local startup (full walkthrough + troubleshooting in **README.md → Run locally**): Docker Desktop
+running → `docker compose up -d db` → migrations (below) → `run_webapp.bat`. `DATABASE_URL` in `.env`
+must use `127.0.0.1`, never `localhost` (IPv6-first resolution hangs startup against Docker's
+IPv4-only port). Reviewer login is `admin` + `.env`'s `ADMIN_PASSWORD`.
+
+Schema is created/upgraded by idempotent scripts (run them after pulling, safe to re-run):
 ```bat
 .venv\Scripts\python.exe scripts\init_db.py
-:: then each scripts\migrate_*.py  (report_fields, user_accounts, async_processing,
-::                                  body_type, material_type, driver_axle, ...)
+.venv\Scripts\python.exe scripts\run_migrations.py      :: pending migrate_*.py only (--list, --all)
 .venv\Scripts\python.exe scripts\create_user.py create --username asha --role telecaller --name "Asha"
 ```
+`run_migrations.py` **discovers** `scripts\migrate_*.py` by glob — never a hardcoded list (a
+forgotten registration once caused a prod outage) — and records each in a `schema_migrations`
+ledger only after it exits 0, so already-applied ones are skipped. `deploy.sh` uses it too, in one
+container. Consequently **only real schema migrations may be named `migrate_*.py`**: anything
+matching the glob runs unattended on every fresh database and on the next prod deploy (one-off
+housekeeping like `rekey_report_photos_date_first.py` is deliberately named otherwise). A migration
+adding a column must land before the code that selects it is served — the ORM selects every mapped
+column, so a missing one 500s every page; `deploy.sh` migrates before restarting for this reason.
 
 Docker (same image is both web app and pipeline): `docker compose up -d` (db + web);
 `docker compose --profile pipeline run --rm pipeline` (extraction — not part of `up`).
@@ -134,16 +144,6 @@ single `TruckEvent` directly.
 - `review_status` (PENDING / PASSED / REJECTED): **human**. A telecaller's decision via
   `PATCH /api/trucks/{id}` or the `/review` queue. **PASSED = the contributor is reward-eligible.**
 
-Every mobile report also writes a `submission_log` row (audit trail for spotting reward farming).
-`require_phone=True` on the video/stream DB writer drops sightings with no callable number (a
-telecaller can't act on them). Mobile reports don't have an equivalent gate — as of 2026-09-15
-`phone_number` is optional on `POST /api/trucks/report`; a report submitted with none is still
-stored and still goes through review, it just has no callable number (same practical effect as a
-video/stream sighting that failed `require_phone`, just not dropped since a human already typed
-the rest of the report). `phone_number` blank is still checked against the `users` table for a
-blocked (`is_active=False`) account when one *is* given — see the auth section above.
-
-**Auth (`pipeline/auth.py`, `webapp/app.py`):** one `users` table for everyone — external mobile
 **Reviewers can correct a report's fields before deciding** (`/review` → Edit, backed by
 `PATCH /api/trucks/{id}/fields`, a separate endpoint from the Pass/Reject PATCH). Only a
 whitelisted set of typed fields is editable (`_EDITABLE_FIELDS` in `webapp/app.py`); provenance,
@@ -159,6 +159,16 @@ edit overwrites the contributor's value in place; `phone_reported` also keeps th
 One gap to know about: requeuing an edited report re-runs `reconcile` on the *edited* plate as if the
 contributor had typed it — `edit_history` is then the only record of what they actually sent.
 
+Every mobile report also writes a `submission_log` row (audit trail for spotting reward farming).
+`require_phone=True` on the video/stream DB writer drops sightings with no callable number (a
+telecaller can't act on them). Mobile reports don't have an equivalent gate — as of 2026-09-15
+`phone_number` is optional on `POST /api/trucks/report`; a report submitted with none is still
+stored and still goes through review, it just has no callable number (same practical effect as a
+video/stream sighting that failed `require_phone`, just not dropped since a human already typed
+the rest of the report). `phone_number` blank is still checked against the `users` table for a
+blocked (`is_active=False`) account when one *is* given — see the auth section above.
+
+**Auth (`pipeline/auth.py`, `webapp/app.py`):** one `users` table for everyone — external mobile
 *contributors* (self-register by phone, role `contributor`) and internal *operators* (created by
 admin via `scripts/create_user.py`, role `telecaller`/`admin`). Login id is phone for contributors,
 username for operators. One `user_sessions` table backs **both** the web session cookie and the
