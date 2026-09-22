@@ -9,8 +9,8 @@ Rules (from the product owner):
   number (fuzzy plate match — OCR is noisy). No plate read, no number typed, or a
   plate that disagrees → the row is still stored but UNVERIFIED (not auto-trusted /
   not auto-paid), with a reason recorded for abuse review.
-- Phone (mandatory): merge the user-typed number with any OCR-read numbers, keeping a
-  column-level distinction of reported vs OCR.
+- Phone (optional): merge the user-typed number, if any, with any OCR-read numbers,
+  keeping a column-level distinction of reported vs OCR.
 - Everything else OCR finds (company, vehicle type, city, other text) flows to its
   own column; the remaining fields are taken verbatim from the report.
 """
@@ -162,9 +162,13 @@ def reconcile(reported: dict, ocr: dict, config) -> dict:
         reason = "no vehicle number reported and none readable in the photos"
         license_plate = None
 
-    # ── Phone (mandatory) ───────────────────────────────────────────────────────
-    phone_reported = _clean_phone(reported.get("phone_number", "")) or \
-        re.sub(r'\D', '', reported.get("phone_number", "")) or None
+    # ── Phone (optional since 2026-09-15) ───────────────────────────────────────
+    # `or ""`, not .get(key, ""): the worker rebuilds `reported` from the stored row
+    # (db_writer.reported_from_row), which always sets the key — to None when the
+    # contributor gave no phone. A .get default doesn't cover a present-but-None key,
+    # so re.sub(None) raised and every phone-less report was marked FAILED.
+    raw_phone = reported.get("phone_number") or ""
+    phone_reported = _clean_phone(raw_phone) or re.sub(r'\D', '', raw_phone) or None
     phone_ocr = ocr.get("phone_number") or None
     merged, phone_status = _merge_phones(phone_reported or "", phone_ocr or "")
     phone_number = merged or phone_reported
