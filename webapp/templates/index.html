@@ -287,10 +287,35 @@
                      chevron is where the history actually lives. -->
                 <td class="px-2 py-3.5 text-right sticky right-0 {{ zebra }} group-hover:bg-emerald-50/40 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.08)]">
                   {% set details_label = ('View lead details & sighting history (' ~ t.group_count ~ ')') if (t.group_count and t.group_count > 1) else 'View details' %}
-                  <button type="button" title="{{ details_label }}" aria-label="{{ details_label }}"
-                          hx-get="/trucks/{{ t.id }}/panel" hx-target="#detail-body" hx-swap="innerHTML"
-                          onclick="openDetail()"
-                          class="text-slate-300 hover:text-slate-700 text-lg leading-none transition-colors">›</button>
+                  <div class="inline-flex items-center gap-1">
+                    {# Edit is reviewer-only (`/` itself is open to brokers) and report-level,
+                       while a row here is a LEAD. So it only appears when exactly one of the
+                       lead's sightings is an editable report — and it edits THAT report, not
+                       the merged lead. When several qualify, the pencil opens the drawer
+                       instead, where each sighting can be edited on its own. #}
+                    {% if user and user.can_review %}
+                      {% if t.edit_payload %}
+                        <button type="button" data-edit='{{ t.edit_payload | tojson }}' onclick="openEdit(this)"
+                                title="Edit this report" aria-label="Edit this report"
+                                class="text-slate-300 hover:text-slate-700 transition-colors p-1">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                        </button>
+                      {% elif t.edit_many %}
+                        <button type="button"
+                                title="{{ t.edit_many }} editable sightings in this lead — open details to edit one"
+                                aria-label="Open details to edit one of {{ t.edit_many }} sightings"
+                                hx-get="/trucks/{{ t.id }}/panel" hx-target="#detail-body" hx-swap="innerHTML"
+                                onclick="openDetail()"
+                                class="text-slate-200 hover:text-slate-500 transition-colors p-1">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                        </button>
+                      {% endif %}
+                    {% endif %}
+                    <button type="button" title="{{ details_label }}" aria-label="{{ details_label }}"
+                            hx-get="/trucks/{{ t.id }}/panel" hx-target="#detail-body" hx-swap="innerHTML"
+                            onclick="openDetail()"
+                            class="text-slate-300 hover:text-slate-700 text-lg leading-none transition-colors">›</button>
+                  </div>
                 </td>
               </tr>
               {% endfor %}
@@ -332,6 +357,9 @@
     </div>
     <div id="detail-body" class="px-5 py-4 overflow-y-auto grow text-sm text-slate-500">Loading…</div>
   </aside>
+
+  {# Reviewer-only; a broker viewing `/` never sees an Edit button that opens it. #}
+  {% if user and user.can_review %}{% include "_edit_report_modal.html" %}{% endif %}
 
   <script>
     function _copied(btn) {

@@ -1,0 +1,131 @@
+{# Shared "Edit report" dialog — included by review.html (queue rows) and index.html
+   (broker rows + the detail drawer). One copy so the two pages cannot drift apart:
+   the fields here must stay in step with _EDITABLE_FIELDS in webapp/app.py, which is
+   what PATCH /api/trucks/{id}/fields actually accepts.
+
+   Open it with openEdit(btn), where btn carries a data-edit attribute holding the
+   report's edit_payload JSON (built by _edit_payload() in webapp/app.py). #}
+  <div id="edit-modal" class="hidden fixed inset-0 z-50 items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+       onclick="if(event.target===this)closeEdit()">
+    <form onsubmit="saveEdit(); return false;"
+          class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 flex flex-col gap-4 max-h-[92vh] overflow-y-auto">
+      <div>
+        <h2 class="font-bold text-lg leading-tight">Edit report <span id="edit-label" class="font-mono text-slate-500"></span></h2>
+        <p class="text-sm text-slate-500 mt-0.5">Changes are logged with your name. The system verification badge is not recalculated — it stays the check of what the contributor submitted.</p>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+        <label class="block sm:col-span-2"><span class="font-medium">Vehicle number</span>
+          <input id="edit-license_plate" maxlength="32" autocomplete="off"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 font-mono uppercase focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block sm:col-span-2"><span class="font-medium">Phone number</span>
+          <span class="text-slate-400 font-normal">— separate several with ;</span>
+          <input id="edit-phone_number" maxlength="128" inputmode="tel" autocomplete="off"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 font-mono focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Driver name</span>
+          <input id="edit-driver_name" maxlength="128"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Company</span>
+          <input id="edit-company_name" maxlength="255"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Load</span>
+          <select id="edit-loaded_status"
+                  class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-slate-300">
+            <option value="">—</option><option value="LOADED">Loaded</option><option value="UNLOADED">Unloaded</option>
+          </select></label>
+        <label class="block"><span class="font-medium">Wheels</span>
+          <input id="edit-num_wheels" type="number" min="2" max="64" step="1"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Body type</span>
+          <input id="edit-body_type" maxlength="32"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Material</span>
+          <input id="edit-material_type" maxlength="64"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Axle</span>
+          <input id="edit-axle_type" maxlength="32"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+        <label class="block"><span class="font-medium">Location</span>
+          <input id="edit-location" maxlength="255"
+                 class="mt-1 w-full px-3 py-2 rounded-md border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-300"></label>
+      </div>
+      <p id="edit-error" class="hidden text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2"></p>
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="closeEdit()"
+          class="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 font-medium transition-colors">Cancel</button>
+        <button id="edit-save" type="submit"
+          class="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-700 text-white font-semibold transition-colors disabled:opacity-50">Save changes</button>
+      </div>
+    </form>
+  </div>
+<script>
+    // ── Edit ──────────────────────────────────────────────────────────────────
+    const EDIT_FIELDS = ["license_plate", "phone_number", "driver_name", "company_name",
+                         "loaded_status", "num_wheels", "body_type", "material_type",
+                         "axle_type", "location"];
+    let _editId = null, _editOrig = null;
+
+    function _editErr(msg) {
+      const el = document.getElementById("edit-error");
+      el.textContent = msg || "";
+      el.classList.toggle("hidden", !msg);
+    }
+
+    function openEdit(btn) {
+      let d;
+      try { d = JSON.parse(btn.getAttribute("data-edit") || "{}"); } catch (_) { return; }
+      _editId = d.id; _editOrig = d;
+      for (const f of EDIT_FIELDS) {
+        document.getElementById("edit-" + f).value = d[f] == null ? "" : String(d[f]);
+      }
+      document.getElementById("edit-label").textContent = d.label || ("#" + d.id);
+      document.getElementById("edit-save").disabled = false;
+      _editErr("");
+      const m = document.getElementById("edit-modal");
+      m.classList.remove("hidden"); m.classList.add("flex");
+      setTimeout(() => document.getElementById("edit-license_plate").focus(), 50);
+    }
+
+    function closeEdit() {
+      const m = document.getElementById("edit-modal");
+      m.classList.add("hidden"); m.classList.remove("flex");
+      _editId = null; _editOrig = null;
+    }
+
+    async function saveEdit() {
+      if (_editId == null) return;
+      // Send only what actually changed, so edit_history records real corrections
+      // and an untouched field is never rewritten.
+      const body = {};
+      for (const f of EDIT_FIELDS) {
+        const v = document.getElementById("edit-" + f).value.trim();
+        const orig = _editOrig[f] == null ? "" : String(_editOrig[f]);
+        if (v === orig) continue;
+        body[f] = f === "num_wheels" ? (v === "" ? null : parseInt(v, 10)) : v;
+      }
+      if (!Object.keys(body).length) { closeEdit(); return; }
+
+      const save = document.getElementById("edit-save");
+      save.disabled = true;
+      _editErr("");
+      try {
+        const res = await fetch("/api/trucks/" + _editId + "/fields", {
+          method: "PATCH",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(body),
+        });
+        if (res.ok) { location.reload(); return; }
+        let msg = "Save failed (" + res.status + ")";
+        try {
+          const j = await res.json();
+          if (typeof j.detail === "string") msg = j.detail;
+          else if (Array.isArray(j.detail) && j.detail[0] && j.detail[0].msg) msg = j.detail[0].msg;
+        } catch (_) {}
+        _editErr(msg);
+      } catch (_) {
+        _editErr("Network error — changes were not saved.");
+      }
+      save.disabled = false;
+    }
+
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeEdit(); });
+</script>

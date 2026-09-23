@@ -159,6 +159,20 @@ edit overwrites the contributor's value in place; `phone_reported` also keeps th
 One gap to know about: requeuing an edited report re-runs `reconcile` on the *edited* plate as if the
 contributor had typed it — `edit_history` is then the only record of what they actually sent.
 
+**The same Edit exists on `/`, but a `/` row is a LEAD, not a report** — so what it edits has to be
+resolved first (`index()`): Edit appears inline only when **exactly one** of the lead's `_members` is
+editable, and it edits *that member*, pre-filled from the member — never from the lead, whose
+`phone_number` is merged across members (editing from the lead would write another report's numbers
+into this one). When several members qualify, the row's pencil opens the detail drawer instead, where
+`detail_panel.html` offers one Edit per sighting (each is a single id, so it's unambiguous; the entry
+that *is* the drawer's own record is skipped since the header already has an Edit). `_editable_report()`
+/ `_edit_payload()` in `webapp/app.py` are the single definition of "editable + what to pre-fill",
+used by `/review`, `/` and the drawer, and `webapp/templates/_edit_report_modal.html` is the one copy
+of the dialog + its JS — keep both in step with `_EDITABLE_FIELDS`. Two things that bite here: `/` is
+**open to anyone** (unlike `/review`), so the button and the dialog are gated on `can_review` — the
+endpoint enforces it regardless; and every write that changes what `/` shows must call
+`_invalidate_index_caches()`, or the 20s lead cache makes a successful edit look like it didn't save.
+
 Every mobile report also writes a `submission_log` row (audit trail for spotting reward farming).
 `require_phone=True` on the video/stream DB writer drops sightings with no callable number (a
 telecaller can't act on them). Mobile reports don't have an equivalent gate — as of 2026-09-15

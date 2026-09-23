@@ -61,6 +61,14 @@ _INDEX_FACETS_TTL = 60  # seconds — global type/city dropdown option lists
 _index_leads_cache: dict = {}
 _index_facets_cache: dict = {}
 
+
+def _invalidate_index_caches() -> None:
+    """Drop the broker page's cached leads after a write that changes what it shows.
+    Without this, an edit or a Pass/Reject can stay invisible on `/` for up to the TTL,
+    which reads as "my change didn't save". Facets (type/city lists) are left alone —
+    edits can't introduce a new vehicle_type or city."""
+    _index_leads_cache.clear()
+
 app = FastAPI(title="FreightDesk", description="Truck intelligence & dispatch platform")
 templates = Jinja2Templates(directory=str(_HERE / "templates"))
 
@@ -358,12 +366,34 @@ def _plate_hover(d: dict) -> Optional[str]:
     return None
 
 
+def _editable_report(d: dict) -> bool:
+    """Whether a reviewer may still correct this report's fields. Mirrors the checks
+    PATCH /api/trucks/{id}/fields enforces (it is the authority — this only decides
+    whether the UI offers the button)."""
+    return (d.get("source") == "image_api"
+            and (d.get("review_status") or "PENDING") == "PENDING"
+            and d.get("processing_status") not in ("QUEUED", "PROCESSING"))
+
+
+def _edit_payload(d: dict):
+    """What the Edit dialog pre-fills from, or None when this report isn't editable.
+    One definition for every page that offers Edit (/review rows, / rows, the broker
+    detail drawer), so the dialog can't drift out of sync with `_EDITABLE_FIELDS`."""
+    if not _editable_report(d):
+        return None
+    payload = {f: d.get(f) for f in _EDITABLE_FIELDS}
+    payload["id"] = d.get("id")
+    payload["label"] = d.get("license_plate") or f"#{d.get('id')}"
+    return payload
+
+
 def _enrich(row: Truck) -> dict:
     d = row.as_dict()
     d["time_ago"] = _time_ago(row.detected_at)
     d["detected_at_human"] = row.detected_at.strftime("%Y-%m-%d %H:%M") if row.detected_at else ""
     d["reason"] = _plate_reason(d)
     d["plate_hover"] = _plate_hover(d)
+    d["edit_payload"] = _edit_payload(d)
     return d
 
 
@@ -403,8 +433,12 @@ def truck_panel(request: Request, truck_id: int):
                 history = sorted(members, key=lambda m: m.get("detected_at") or "", reverse=True)
 
     d["history"] = history
+    # can_review gates the drawer's Edit buttons: `/` itself is open to anyone, and
+    # this fragment is fetched directly by URL, so it must not offer Edit to a broker.
+    # (The PATCH endpoint refuses non-reviewers regardless; this just hides the button.)
     return templates.TemplateResponse(request=request, name="detail_panel.html",
-                                      context={"t": d})
+                                      context={"t": d,
+                                               "can_review": _can_review(get_current_user(request))})
 
 
 # ── Mobile field-report ingestion ────────────────────────────────────────────────
@@ -682,6 +716,8 @@ def patch_truck(truck_id: int, body: ReviewPatch,
         row.reviewed_at = datetime.now()
         row.review_note = (body.review_note or "").strip() or None
         s.commit()
+        # A decision changes the lead's Trust badge on `/`, which is cached.
+        _invalidate_index_caches()
         return JSONResponse(row.as_dict())
 
 
@@ -793,6 +829,9 @@ def edit_report_fields(truck_id: int, body: ReportEdit,
             # track in-place list mutation, so .append() would never be flushed.
             row.edit_history = list(row.edit_history or []) + [entry]
             s.commit()
+            # The broker page serves leads from a 20s cache; without this an edit
+            # made from `/` appears not to have worked when the page reloads.
+            _invalidate_index_caches()
         return JSONResponse(row.as_dict())
 
 
@@ -1005,6 +1044,9 @@ _INDEX_LIST_COLUMNS = (
     Truck.phone_number, Truck.vehicle_type, Truck.city, Truck.location,
     Truck.loaded_status, Truck.body_type, Truck.material_type, Truck.driver_name,
     Truck.axle_type, Truck.other_text, Truck.review_status,
+    # Not rendered as a column — needed to decide whether a lead's underlying report
+    # is still editable (_editable_report) and to pre-fill the Edit dialog.
+    Truck.processing_status, Truck.num_wheels,
 )
 
 
@@ -1069,6 +1111,8 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
                     "axle_type": r.axle_type,
                     "other_text": r.other_text,
                     "review_status": r.review_status,
+                    "processing_status": r.processing_status,
+                    "num_wheels": r.num_wheels,
                     "time_ago": _time_ago(r.detected_at),
                     "detected_at_human": r.detected_at.strftime("%Y-%m-%d %H:%M") if r.detected_at else "",
                     "fresh": _fresh_bucket(r.detected_at),
@@ -1101,6 +1145,19 @@ def index(request: Request, q: Optional[str] = None, source: Optional[str] = Non
     pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(page, pages)
     trucks = leads[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]
+
+    # Resolve what Edit means for each row on this page. A `/` row is a LEAD — possibly
+    # several sightings of one truck collapsed together (broker_grouping.py) — so
+    # "edit this row" is only well defined when exactly one of its members is an
+    # editable report. Crucially the dialog is pre-filled from that MEMBER, never from
+    # the lead: a lead's phone_number is merged across members, so editing from the
+    # lead would write other reports' numbers into this one. When several members are
+    # editable the row sends the user to the drawer, where each sighting is listed
+    # separately and can be edited by id.
+    for ld in trucks:
+        editable = [m for m in ld.get("_members", []) if _editable_report(m)]
+        ld["edit_payload"] = _edit_payload(editable[0]) if len(editable) == 1 else None
+        ld["edit_many"] = len(editable) if len(editable) > 1 else 0
 
     # Computed over the full filtered set (leads), not just this page's slice — otherwise
     # the column flickers in/out depending on which 15 rows land on the current page (e.g.
